@@ -1,7 +1,8 @@
-// Fourteen feats. Each one's `check(campaign, debrief)` reads the campaign's running totals and
+// Sixteen feats. Each one's `check(campaign, debrief)` reads the campaign's running totals and
 // the debrief of the flight that just ended (null between flights) and returns true once it is
 // earned; evaluateAchievements (campaign.js calls it after every landing) is the only place these
 // run. "Ace of the Amberreach" deliberately depends on the others, so it always unlocks last.
+import { CONTRACT_COUNT } from './contracts.js';
 
 export const ACHIEVEMENTS = [
   {
@@ -81,6 +82,18 @@ export const ACHIEVEMENTS = [
     name: 'Mail Marathon',
     detail: 'Reach ten deliveries in one Night Mail Marathon run.',
     check: (campaign) => campaign.totals.bestEndlessRun >= 10,
+  },
+  {
+    id: 'combo-master',
+    name: 'Combo Master',
+    detail: 'Build a ten-landing streak of Perfect or Smooth touchdowns.',
+    check: (campaign) => campaign.combo >= 10,
+  },
+  {
+    id: 'every-manifest',
+    name: 'Every Manifest',
+    detail: "Fly every contract on Tidewing Post's books.",
+    check: (campaign) => campaign.completedContracts.size >= CONTRACT_COUNT,
   },
   {
     id: 'ace-amberreach',

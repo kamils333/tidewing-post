@@ -51,6 +51,13 @@ function activeHazard(route, x) {
   return route.hazards.find((hazard) => x >= hazard.start && x <= hazard.end) ?? null;
 }
 
+/** Perfect (barely a ripple), Smooth (a normal touchdown) or Rough (survived, but it cost the hull). */
+function landingGrade(vy, integrity) {
+  if (integrity < 100 || vy >= FLIGHT.safeTouchdownSpeed) return 'rough';
+  if (vy < FLIGHT.perfectTouchdownSpeed) return 'perfect';
+  return 'smooth';
+}
+
 function finish(flight, outcome) {
   const aircraft = flight.aircraft;
   const landedClean = outcome.delivered && Math.abs(aircraft.vy) < FLIGHT.safeTouchdownSpeed && aircraft.integrity >= 100;
@@ -59,6 +66,7 @@ function finish(flight, outcome) {
     delivered: outcome.delivered,
     reason: outcome.reason,
     landedClean,
+    grade: outcome.delivered ? landingGrade(Math.abs(aircraft.vy), aircraft.integrity) : null,
     verticalSpeed: Math.abs(aircraft.vy),
     fuelFraction: fuelFraction(aircraft),
     weatherSeen: flight.weatherSeen,

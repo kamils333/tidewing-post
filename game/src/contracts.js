@@ -22,6 +22,15 @@ export const CONTRACTS = [
     brief: "Mirei's crew lost two nets to a shark last week. These are the replacements.",
   },
   {
+    id: 'tide-charts',
+    route: 'driftwood',
+    client: 'mirei',
+    title: 'Tide Charts',
+    cargoKg: 5,
+    fragile: false,
+    brief: "New tide tables from the harbourmaster. Mirei's crew won't put out again without them.",
+  },
+  {
     id: 'kelp-starters',
     route: 'kelp',
     client: 'benno',
@@ -38,6 +47,15 @@ export const CONTRACTS = [
     cargoKg: 3,
     fragile: true,
     brief: "A music box from the mainland. Wren has asked after it every run for a month.",
+  },
+  {
+    id: 'harvest-scale',
+    route: 'kelp',
+    client: 'benno',
+    title: 'Harvest Scale',
+    cargoKg: 34,
+    fragile: false,
+    brief: "Benno's old scale finally gave out mid-weighing. This one had better hold.",
   },
   {
     id: 'lamp-oil',
@@ -76,6 +94,15 @@ export const CONTRACTS = [
     brief: 'Signal flags for the mill tower, wanted before the weather turns.',
   },
   {
+    id: 'spare-vanes',
+    route: 'windlass',
+    client: 'dez',
+    title: 'Spare Vanes',
+    cargoKg: 27,
+    fragile: true,
+    brief: 'Canvas-and-timber vanes, balanced by hand. One warped vane and the whole mill shakes.',
+  },
+  {
     id: 'ash-masks',
     route: 'ashfall',
     client: 'nat',
@@ -92,6 +119,15 @@ export const CONTRACTS = [
     cargoKg: 46,
     fragile: true,
     brief: 'A crate of raw ore for the assay office. Rough rock, but it chips if it is dropped.',
+  },
+  {
+    id: 'miners-mail',
+    route: 'ashfall',
+    client: 'nat',
+    title: "Miners' Mail",
+    cargoKg: 7,
+    fragile: false,
+    brief: 'A month of letters from the mainland, held up by the ash. The crew is asking after them daily.',
   },
   {
     id: 'medicine-chest',

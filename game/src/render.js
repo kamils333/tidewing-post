@@ -3,7 +3,7 @@
 // sits still on screen and the sea, sky and islands move past it, so altitude and speed read as
 // how far the horizon and the water are, not as the plane sliding around the canvas.
 import { FIELD, PALETTE, FONT, TITLE, SUBTITLE, AIRCRAFT_BASE } from './config.js';
-import { ROUTES, findIsland } from './geo.js';
+import { ROUTES, ISLANDS, HOME, findIsland } from './geo.js';
 import { NPCS } from './npcs.js';
 import { contractsForRoute } from './contracts.js';
 import { UPGRADES } from './upgrades.js';
@@ -19,6 +19,8 @@ import {
   drawDestinationBanner,
   drawScorePopup,
   drawAchievementToast,
+  drawComboBadge,
+  drawMuteIndicator,
 } from './hud.js';
 
 export const SCREEN_TITLE = 'title';
@@ -35,8 +37,17 @@ export const HARBOR_LAYOUT = {
   routes: { x: 56, yStart: 128, rowH: 36, width: 420 },
   contracts: { x: 484, yStart: 126, rowH: 92, width: 420 },
   shop: { x: 930, yStart: 112, rowH: 34, width: 280 },
+  map: { x: 56, y: 468, width: 1154, height: 148 },
   flyButton: { x: 940, y: FIELD.height - 70, width: 180, height: 40 },
 };
+
+export const MAP_MARKER_RADIUS = 15;
+
+/** Where a point normalised 0..1 (an island or HOME's `map`) lands inside the chart panel. */
+export function mapScreenPoint(point) {
+  const m = HARBOR_LAYOUT.map;
+  return { x: m.x + point.x * m.width, y: m.y + point.y * m.height };
+}
 
 function hashTile(i) {
   const s = Math.sin(i * 12.9898) * 43758.5453;
@@ -110,7 +121,6 @@ export function createRenderer(canvas) {
   }
 
   function drawFarIslands(x) {
-    ctx.fillStyle = PALETTE.islandFar;
     for (let i = -1; i < 8; i += 1) {
       const spacing = 420;
       const tileIndex = Math.floor(x / spacing) + i;
@@ -119,12 +129,66 @@ export function createRenderer(canvas) {
       if (screenX < -200 || screenX > FIELD.width + 200) continue;
       const h = 30 + wobble * 50;
       const w = 90 + wobble * 70;
+      ctx.fillStyle = PALETTE.islandFar;
       ctx.beginPath();
       ctx.moveTo(screenX, SEA_SCREEN_Y);
       ctx.quadraticCurveTo(screenX + w * 0.3, SEA_SCREEN_Y - h, screenX + w * 0.5, SEA_SCREEN_Y - h * 0.9);
       ctx.quadraticCurveTo(screenX + w * 0.75, SEA_SCREEN_Y - h * 0.5, screenX + w, SEA_SCREEN_Y);
       ctx.closePath();
       ctx.fill();
+      // A hut or two on every third isle, so the chain reads as lived-in, not just scenery.
+      if (tileIndex % 3 === 0) {
+        const hutX = screenX + w * 0.4;
+        const hutY = SEA_SCREEN_Y - h * 0.62;
+        ctx.fillStyle = PALETTE.hullShade;
+        ctx.fillRect(hutX, hutY, 10, 8);
+        ctx.fillStyle = PALETTE.hull;
+        ctx.beginPath();
+        ctx.moveTo(hutX - 2, hutY);
+        ctx.lineTo(hutX + 5, hutY - 6);
+        ctx.lineTo(hutX + 12, hutY);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+  }
+
+  function drawClouds(x) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(255, 244, 232, 0.8)';
+    for (let i = -1; i < 8; i += 1) {
+      const spacing = 900;
+      const tileIndex = Math.floor(x / spacing) + i;
+      const wobble = hashTile(tileIndex + 97);
+      const screenX = PLANE_SCREEN_X - 700 + (tileIndex * spacing - x) * 0.2 + wobble * 120;
+      if (screenX < -220 || screenX > FIELD.width + 220) continue;
+      const cy = 60 + wobble * 170;
+      const scale = 0.9 + wobble * 0.9;
+      for (const [dx, dy, r] of [[0, 0, 26], [22, -8, 20], [-24, -4, 18], [10, 8, 22], [-10, 10, 16]]) {
+        ctx.beginPath();
+        ctx.ellipse(screenX + dx * scale, cy + dy * scale, r * scale, r * scale * 0.7, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  function drawBirds(x) {
+    ctx.strokeStyle = 'rgba(40, 30, 50, 0.5)';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 4; i += 1) {
+      const spacing = 340;
+      const tileIndex = Math.floor(x / spacing) + i;
+      const wobble = hashTile(tileIndex + 211);
+      if (wobble > 0.6) continue;
+      const screenX = PLANE_SCREEN_X - 500 + ((tileIndex * spacing - x) * 0.5);
+      if (screenX < -40 || screenX > FIELD.width + 40) continue;
+      const by = 150 + wobble * 220;
+      const flap = Math.sin(performance.now() / 260 + tileIndex) * 5;
+      ctx.beginPath();
+      ctx.moveTo(screenX - 10, by - flap);
+      ctx.quadraticCurveTo(screenX, by + 4, screenX + 10, by - flap);
+      ctx.stroke();
     }
   }
 
@@ -150,6 +214,99 @@ export function createRenderer(canvas) {
     }
   }
 
+  /** Each isle's own silhouette behind its dock, so the world is more than six blank docks. */
+  function drawIslandLandmark(profile, x, baseY) {
+    const spin = performance.now() / 1000;
+    if (profile === 'reef') {
+      // Thornback Shoal: Sera's lighthouse, with a beam that sweeps past the dock.
+      ctx.fillStyle = PALETTE.hull;
+      ctx.fillRect(x + 54, baseY - 54, 10, 48);
+      ctx.fillStyle = PALETTE.livery;
+      ctx.fillRect(x + 54, baseY - 54, 10, 10);
+      ctx.fillRect(x + 54, baseY - 34, 10, 10);
+      ctx.fillStyle = PALETTE.cabinGlow;
+      ctx.beginPath();
+      ctx.arc(x + 59, baseY - 58, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.save();
+      ctx.translate(x + 59, baseY - 58);
+      ctx.rotate(Math.sin(spin * 0.6) * 0.9);
+      const beam = ctx.createLinearGradient(0, 0, 70, 0);
+      beam.addColorStop(0, 'rgba(255, 221, 150, 0.45)');
+      beam.addColorStop(1, 'rgba(255, 221, 150, 0)');
+      ctx.fillStyle = beam;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(70, -14);
+      ctx.lineTo(70, 14);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    } else if (profile === 'ridge') {
+      // Windlass Point: Dez's windmill, blades always turning.
+      ctx.fillStyle = PALETTE.hullShade;
+      ctx.fillRect(x + 56, baseY - 44, 8, 40);
+      ctx.save();
+      ctx.translate(x + 60, baseY - 44);
+      ctx.rotate(spin * 1.6);
+      ctx.strokeStyle = PALETTE.hull;
+      ctx.lineWidth = 4;
+      for (let blade = 0; blade < 4; blade += 1) {
+        const a = (blade * Math.PI) / 2;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(Math.cos(a) * 20, Math.sin(a) * 20);
+        ctx.stroke();
+      }
+      ctx.restore();
+    } else if (profile === 'lagoon') {
+      // Kelp Hollow: Benno's drying racks, strands hanging to cure in the wind.
+      ctx.strokeStyle = PALETTE.hullShade;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(x + 50, baseY - 30);
+      ctx.lineTo(x + 92, baseY - 30);
+      ctx.stroke();
+      ctx.strokeStyle = PALETTE.good;
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 4; i += 1) {
+        const sx = x + 56 + i * 10;
+        ctx.beginPath();
+        ctx.moveTo(sx, baseY - 30);
+        ctx.quadraticCurveTo(sx + 3, baseY - 16, sx, baseY - 4);
+        ctx.stroke();
+      }
+    } else if (profile === 'volcanic') {
+      // Ashfall Rock: Nat's mine mouth, a steady wisp of ash smoke.
+      ctx.fillStyle = PALETTE.islandNear;
+      ctx.beginPath();
+      ctx.arc(x + 60, baseY - 8, 14, Math.PI, 0);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(180, 176, 170, 0.5)';
+      for (let i = 0; i < 3; i += 1) {
+        const puff = (spin * 10 + i * 7) % 24;
+        ctx.beginPath();
+        ctx.arc(x + 60 + Math.sin(spin + i) * 4, baseY - 22 - puff, 5 + puff * 0.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else {
+      // Driftwood Cay and Last Light Atoll: a lamp post and a low hut, the common dockside mark.
+      ctx.fillStyle = PALETTE.hull;
+      ctx.fillRect(x + 56, baseY - 26, 18, 18);
+      ctx.fillStyle = PALETTE.hullShade;
+      ctx.beginPath();
+      ctx.moveTo(x + 52, baseY - 26);
+      ctx.lineTo(x + 65, baseY - 36);
+      ctx.lineTo(x + 78, baseY - 26);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = PALETTE.cabinGlow;
+      ctx.beginPath();
+      ctx.arc(x + 60, baseY - 18, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
   function drawDestination(route, island, distanceLeft, visibleRange) {
     if (!island || distanceLeft > visibleRange) return 0;
     const t = Math.max(0, Math.min(1, distanceLeft / visibleRange));
@@ -164,13 +321,10 @@ export function createRenderer(canvas) {
     ctx.quadraticCurveTo(screenX + 55, SEA_SCREEN_Y - 40, screenX + 90, SEA_SCREEN_Y);
     ctx.closePath();
     ctx.fill();
-    // The dock: a short pier reaching into the water, with a lamp post for a lit mark at dusk.
+    // The dock: a short pier reaching into the water, with the island's own landmark behind it.
     ctx.fillStyle = PALETTE.hullShade;
     ctx.fillRect(screenX - 10, SEA_SCREEN_Y - 4, 70, 8);
-    ctx.fillStyle = PALETTE.cabinGlow;
-    ctx.beginPath();
-    ctx.arc(screenX + 60, SEA_SCREEN_Y - 18, 5, 0, Math.PI * 2);
-    ctx.fill();
+    drawIslandLandmark(island.profile, screenX, SEA_SCREEN_Y);
     if (distanceLeft < visibleRange * 0.55) {
       const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 220);
       ctx.strokeStyle = `rgba(255, 210, 122, ${0.5 + pulse * 0.4})`;
@@ -205,7 +359,7 @@ export function createRenderer(canvas) {
     ctx.fill();
     ctx.fillRect(-8, 8, 6, 22);
     ctx.fillRect(28, 8, 6, 22);
-    // Tail boom and fin.
+    // Tail boom and fin, in the livery colour so the tail reads from a distance.
     ctx.fillStyle = PALETTE.hullShade;
     ctx.beginPath();
     ctx.moveTo(-54, 2);
@@ -213,7 +367,12 @@ export function createRenderer(canvas) {
     ctx.lineTo(-30, 8);
     ctx.closePath();
     ctx.fill();
+    ctx.fillStyle = PALETTE.livery;
     ctx.fillRect(-58, -26, 8, 24);
+    ctx.fillStyle = PALETTE.cabinGlow;
+    ctx.beginPath();
+    ctx.arc(-54, -16, 3, 0, Math.PI * 2);
+    ctx.fill();
     // Fuselage.
     ctx.fillStyle = PALETTE.hull;
     ctx.beginPath();
@@ -222,12 +381,34 @@ export function createRenderer(canvas) {
     ctx.quadraticCurveTo(44, 10, -34, 12);
     ctx.closePath();
     ctx.fill();
-    // Cabin window, lit from inside.
+    // The livery stripe runs the hull's length, Tidewing Post's rust-red on cream.
+    ctx.fillStyle = PALETTE.livery;
+    ctx.beginPath();
+    ctx.moveTo(-32, 5);
+    ctx.quadraticCurveTo(10, -10, 52, 0);
+    ctx.lineTo(52, 4);
+    ctx.quadraticCurveTo(10, -6, -32, 9);
+    ctx.closePath();
+    ctx.fill();
+    // Three round cabin windows, each lit from inside.
+    ctx.fillStyle = PALETTE.windowFrame;
+    for (const wx of [-12, 0, 12]) {
+      ctx.beginPath();
+      ctx.arc(wx, -10, 5.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.fillStyle = PALETTE.cabinGlow;
-    ctx.fillRect(-14, -8, 22, 10);
-    // Wing, high enough to read as a parasol wing above the hull.
+    for (const wx of [-12, 0, 12]) {
+      ctx.beginPath();
+      ctx.arc(wx, -10, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Wing, high enough to read as a parasol wing above the hull, with a dark anti-glare stripe.
     ctx.fillStyle = PALETTE.hullShade;
     ctx.fillRect(-46, -30, 96, 8);
+    ctx.fillStyle = PALETTE.liveryDark;
+    ctx.fillRect(-46, -30, 96, 3);
+    ctx.fillStyle = PALETTE.hullShade;
     ctx.fillRect(-4, -24, 6, 10);
     // Engine cowl and a spinning prop disc (a faint blurred ellipse at speed, spokes when slow).
     ctx.fillStyle = PALETTE.engine;
@@ -328,6 +509,8 @@ export function createRenderer(canvas) {
     const visibleRange = (stats.visibilityBase ?? AIRCRAFT_BASE.visibilityBase) * (flight.weather.kind === 'fog' ? 0.42 : 1);
 
     drawSky(night);
+    if (!night) drawClouds(aircraft.x);
+    drawBirds(aircraft.x);
     drawFarIslands(aircraft.x);
     const displayAlt = Math.min(aircraft.altitude, 260) + Math.max(0, aircraft.altitude - 260) * 0.15;
     const horizonShift = Math.min(70, displayAlt * 0.2);
@@ -349,6 +532,8 @@ export function createRenderer(canvas) {
     drawHeadingTape(ctx, route.heading, aircraft.courseDeviation, 26);
     drawFuelGauge(ctx, aircraft.fuel / stats.fuelCapacity);
     drawCargoReadout(ctx, aircraft.cargoKg, flight.contract ? flight.contract.fragile : false);
+    drawComboBadge(ctx, scene.combo ?? 0, scene.comboMultiplier ?? 1);
+    drawMuteIndicator(ctx, Boolean(scene.muted));
     if (island) drawDestinationBanner(ctx, island.name, Math.max(0, distanceLeft));
 
     if (aircraft.stalled && blink) drawWarningBanner(ctx, 'STALL - NOSE DOWN', true);
@@ -367,6 +552,8 @@ export function createRenderer(canvas) {
 
   function drawTitleScreen(campaign) {
     drawSky(false);
+    drawClouds(performance.now() / 40);
+    drawBirds(performance.now() / 40);
     drawFarIslands(performance.now() / 40);
     drawSea(performance.now() / 40);
     text(TITLE, FIELD.width / 2, 300, 64, PALETTE.text, 'center', 'bold');
@@ -374,7 +561,7 @@ export function createRenderer(canvas) {
     const lines = [
       'Climb with W/Up, dive with S/Down.',
       'Steer with A/D or Left/Right against the wind.',
-      'Throttle up with E, back with Q.',
+      'Throttle up with E, back with Q. Mute the engine and the rest with M.',
       '',
       `${campaign.totals.deliveries} deliveries flown - ${campaign.unlockedAchievements.size}/${ACHIEVEMENTS.length} feats earned`,
     ];
@@ -387,6 +574,78 @@ export function createRenderer(canvas) {
     if (campaign.clearedRoutes.has(route.id)) return 'CLEARED';
     const unlocked = route.unlockRequires === null || campaign.clearedRoutes.has(route.unlockRequires);
     return unlocked ? 'OPEN' : 'LOCKED';
+  }
+
+  function drawArchipelagoMap(campaign, selectedRouteId) {
+    const m = HARBOR_LAYOUT.map;
+    panel(m.x, m.y, m.width, m.height);
+    text('THE AMBERREACH ISLES', m.x + 14, m.y + 20, 13, PALETTE.muted, 'left');
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(m.x + 2, m.y + 2, m.width - 4, m.height - 4);
+    ctx.clip();
+
+    const home = mapScreenPoint(HOME.map);
+    const time = performance.now();
+
+    for (const island of ISLANDS) {
+      const route = ROUTES.find((r) => r.island === island.id && !r.isFinale);
+      if (!route) continue;
+      const point = mapScreenPoint(island.map);
+      const status = routeStatusLabel(route, campaign);
+      const selected = route.id === selectedRouteId;
+      const lineColor = status === 'LOCKED' ? 'rgba(130, 120, 140, 0.35)' : status === 'CLEARED' ? 'rgba(143, 227, 160, 0.55)' : 'rgba(255, 210, 122, 0.6)';
+      ctx.strokeStyle = lineColor;
+      ctx.lineWidth = selected ? 3 : 1.6;
+      ctx.setLineDash(status === 'LOCKED' ? [5, 5] : []);
+      ctx.beginPath();
+      ctx.moveTo(home.x, home.y);
+      ctx.lineTo(point.x, point.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    for (const island of ISLANDS) {
+      const route = ROUTES.find((r) => r.island === island.id && !r.isFinale);
+      if (!route) continue;
+      const point = mapScreenPoint(island.map);
+      const status = routeStatusLabel(route, campaign);
+      const selected = route.id === selectedRouteId;
+      const finaleHere = island.id === 'lastlight' && campaign.clearedRoutes.has('lastlight');
+
+      if (selected) {
+        const pulse = 0.5 + 0.5 * Math.sin(time / 200);
+        ctx.strokeStyle = `rgba(255, 210, 122, ${0.5 + pulse * 0.4})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, MAP_MARKER_RADIUS + 5 + pulse * 2, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      ctx.fillStyle = status === 'LOCKED' ? PALETTE.islandFar : status === 'CLEARED' ? PALETTE.good : PALETTE.ring;
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, MAP_MARKER_RADIUS * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+      if (finaleHere) {
+        ctx.fillStyle = PALETTE.cabinGlow;
+        ctx.beginPath();
+        ctx.moveTo(point.x, point.y - 16);
+        ctx.lineTo(point.x + 4, point.y - 9);
+        ctx.lineTo(point.x - 4, point.y - 9);
+        ctx.closePath();
+        ctx.fill();
+      }
+      const labelColor = status === 'LOCKED' ? PALETTE.muted : PALETTE.text;
+      text(status === 'LOCKED' ? `[locked] ${island.name}` : island.name, point.x, point.y + 24, 12, labelColor, 'center');
+    }
+
+    ctx.fillStyle = PALETTE.ring;
+    ctx.beginPath();
+    ctx.arc(home.x, home.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+    text('Saltmere', home.x, home.y - 10, 12, PALETTE.ring, 'center');
+    ctx.restore();
   }
 
   function drawHarborScreen(ui) {
@@ -431,7 +690,7 @@ export function createRenderer(canvas) {
         const done = campaign.completedContracts.has(contract.id);
         text(`${contract.title}${done ? '  (flown)' : ''}`, L.contracts.x, y, 18, done ? PALETTE.good : PALETTE.text, 'left', 'bold');
         text(`${npc.name}, ${npc.role}`, L.contracts.x, y + 20, 13, PALETTE.muted, 'left');
-        text(`"${npc.line}"`, L.contracts.x, y + 38, 13, PALETTE.ring, 'left');
+        text(`"${done ? npc.returnLine : npc.line}"`, L.contracts.x, y + 38, 13, PALETTE.ring, 'left');
         text(`${contract.cargoKg} kg${contract.fragile ? ' - fragile' : ''}`, L.contracts.x, y + 56, 13, PALETTE.muted, 'left');
       });
     }
@@ -458,20 +717,22 @@ export function createRenderer(canvas) {
     ctx.fillRect(L.flyButton.x, L.flyButton.y, L.flyButton.width, L.flyButton.height);
     text('FLY', L.flyButton.x + L.flyButton.width / 2, L.flyButton.y + L.flyButton.height / 2 + 6, 20, '#1a1410', 'center', 'bold');
 
-    text('Click a route, then a contract, then Fly. Click a hangar row to fit it.', 64, FIELD.height - 26, 15, PALETTE.muted, 'left');
+    drawArchipelagoMap(campaign, selectedRouteId);
+    text('Click a route or an isle, then a contract, then Fly. Click a hangar row to fit it.', 64, FIELD.height - 26, 15, PALETTE.muted, 'left');
   }
 
   function drawBriefingScreen(ui) {
-    const { route, contract } = ui;
+    const { route, contract, campaign } = ui;
     drawSky(Boolean(route.isFinale));
     drawSea(60);
     panel(FIELD.width / 2 - 360, 150, 720, 420);
     text(route.name, FIELD.width / 2, 210, 30, PALETTE.text, 'center', 'bold');
     if (contract) {
       const npc = NPCS[contract.client];
+      const done = campaign.completedContracts.has(contract.id);
       text(contract.title, FIELD.width / 2, 260, 22, PALETTE.ring, 'center');
       text(contract.brief, FIELD.width / 2, 300, 16, PALETTE.muted, 'center');
-      text(`${npc.name} - "${npc.line}"`, FIELD.width / 2, 340, 16, PALETTE.text, 'center');
+      text(`${npc.name} - "${done ? npc.returnLine : npc.line}"`, FIELD.width / 2, 340, 16, PALETTE.text, 'center');
       text(`${contract.cargoKg} kg aboard${contract.fragile ? ', handle with care' : ''}`, FIELD.width / 2, 380, 16, PALETTE.muted, 'center');
     } else if (route.isEndless) {
       text('Every leg a little harder than the last. Land clean to keep the run alive.', FIELD.width / 2, 300, 16, PALETTE.muted, 'center');

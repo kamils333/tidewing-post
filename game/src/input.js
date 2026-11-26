@@ -8,18 +8,23 @@ const YAW_RIGHT = new Set(['ArrowRight', 'KeyD']);
 const THROTTLE_UP = new Set(['KeyE']);
 const THROTTLE_DOWN = new Set(['KeyQ']);
 const CONFIRM = new Set(['Space', 'Enter']);
+const MUTE = new Set(['KeyM']);
 
-export function createInput(canvas, renderer) {
+/** `onGesture` fires on every keydown and click: the one native-event hook that can unlock audio. */
+export function createInput(canvas, renderer, onGesture) {
   const held = new Set();
   let confirmQueued = false;
+  let muteQueued = false;
   let click = null;
 
   window.addEventListener('keydown', (event) => {
     held.add(event.code);
     if (CONFIRM.has(event.code) && !event.repeat) confirmQueued = true;
+    if (MUTE.has(event.code) && !event.repeat) muteQueued = true;
     if (CLIMB.has(event.code) || DIVE.has(event.code) || YAW_LEFT.has(event.code) || YAW_RIGHT.has(event.code) || THROTTLE_UP.has(event.code) || THROTTLE_DOWN.has(event.code) || CONFIRM.has(event.code)) {
       event.preventDefault();
     }
+    if (onGesture) onGesture();
   });
   window.addEventListener('keyup', (event) => held.delete(event.code));
   window.addEventListener('blur', () => held.clear());
@@ -29,6 +34,7 @@ export function createInput(canvas, renderer) {
     const ratio = window.devicePixelRatio || 1;
     const clientPoint = { x: (event.clientX - rect.left) * ratio, y: (event.clientY - rect.top) * ratio };
     click = renderer.toCanvasPoint(clientPoint.x, clientPoint.y);
+    if (onGesture) onGesture();
   });
 
   function axis(negativeSet, positiveSet) {
@@ -58,10 +64,23 @@ export function createInput(canvas, renderer) {
       click = null;
       return taken;
     },
+    /** True at most once per press of M. */
+    takeMuteToggle() {
+      const taken = muteQueued;
+      muteQueued = false;
+      return taken;
+    },
   };
 }
 
 /** Hit test helper shared by main.js's menu handlers: is (x, y) inside this rectangle? */
 export function pointInRect(point, x, y, width, height) {
   return point.x >= x && point.x <= x + width && point.y >= y && point.y <= y + height;
+}
+
+/** Hit test helper for round click targets, such as an island marker on the harbour's chart. */
+export function pointInCircle(point, x, y, radius) {
+  const dx = point.x - x;
+  const dy = point.y - y;
+  return dx * dx + dy * dy <= radius * radius;
 }

@@ -2,16 +2,17 @@
 // briefing, and the flight itself (which keeps showing its last result, and any feat toast,
 // until the pilot confirms and the board takes over again). ?shot=cover|storm|harbor|finale
 // (with &seed=N) stages one frame for a screenshot instead of running the game; see shots.js.
-import { STEP } from './config.js';
+import { STEP, FLIGHT } from './config.js';
 import { createRandom, freshSeed } from './random.js';
-import { ROUTES, findRoute, createEndlessLeg } from './geo.js';
+import { ROUTES, ISLANDS, findRoute, createEndlessLeg } from './geo.js';
 import { contractsForRoute } from './contracts.js';
-import { createCampaign, campaignStats, buyUpgrade, canBuyUpgrade, recordFlightResult, routeIsUnlocked } from './campaign.js';
+import { createCampaign, campaignStats, buyUpgrade, canBuyUpgrade, recordFlightResult, routeIsUnlocked, comboMultiplier } from './campaign.js';
 import { createFlight, stepFlight, flightWeatherStrength, PHASE_LANDED, PHASE_CRASHED } from './flight.js';
-import { createInput, pointInRect } from './input.js';
-import { createRenderer, SCREEN_TITLE, SCREEN_HARBOR, SCREEN_BRIEFING, SCREEN_FLIGHT, HARBOR_LAYOUT } from './render.js';
+import { createInput, pointInRect, pointInCircle } from './input.js';
+import { createRenderer, SCREEN_TITLE, SCREEN_HARBOR, SCREEN_BRIEFING, SCREEN_FLIGHT, HARBOR_LAYOUT, mapScreenPoint, MAP_MARKER_RADIUS } from './render.js';
 import { UPGRADES } from './upgrades.js';
 import { stageShot } from './shots.js';
+import { createAudio } from './audio.js';
 
 const MAX_FRAME = 0.25;
 
@@ -41,9 +42,11 @@ function runShot(name) {
 }
 
 function runGame() {
-  const input = createInput(canvas, renderer);
+  const audio = createAudio();
+  const input = createInput(canvas, renderer, () => audio.unlock());
   const campaign = createCampaign();
   const rollWeather = () => Math.random();
+  let warningBeepTimer = 0;
 
   let screen = SCREEN_TITLE;
   let ui = { campaign, selectedRouteId: null, selectedContractId: null, hoverUpgrade: null };
@@ -62,6 +65,7 @@ function runGame() {
   }
 
   function goHarbor() {
+    audio.stopEngine();
     screen = SCREEN_HARBOR;
     flight = null;
     if (!ui.selectedRouteId || !routeIsUnlocked(ui.campaign, ui.selectedRouteId)) selectRoute('driftwood');
@@ -85,7 +89,9 @@ function runGame() {
     flight = createFlight(route, contract, stats, rollWeather);
     flightRecorded = false;
     popupAge = 0;
+    warningBeepTimer = 0;
     screen = SCREEN_FLIGHT;
+    audio.startEngine();
     announce(`Airborne for ${route.name}.`);
   }
 
@@ -117,8 +123,17 @@ function runGame() {
       const y = L.shop.yStart + i * L.shop.rowH;
       if (pointInRect(point, L.shop.x - 10, y - 20, L.shop.width, L.shop.rowH - 4)) {
         ui.hoverUpgrade = upgrade.id;
-        if (canBuyUpgrade(ui.campaign, upgrade.id)) buyUpgrade(ui.campaign, upgrade.id);
+        if (canBuyUpgrade(ui.campaign, upgrade.id)) {
+          buyUpgrade(ui.campaign, upgrade.id);
+          audio.playClickTick();
+        }
       }
+    });
+    ISLANDS.forEach((island) => {
+      const islandRoute = ROUTES.find((r) => r.island === island.id && !r.isFinale);
+      if (!islandRoute) return;
+      const marker = mapScreenPoint(island.map);
+      if (pointInCircle(point, marker.x, marker.y, MAP_MARKER_RADIUS)) selectRoute(islandRoute.id);
     });
     if (pointInRect(point, L.flyButton.x, L.flyButton.y, L.flyButton.width, L.flyButton.height) && route) {
       if (route.isEndless || ui.selectedContractId) goBriefing(route.id);
@@ -126,18 +141,37 @@ function runGame() {
   }
 
   function queueAchievementToasts(unlocked) {
-    for (const achievement of unlocked) toastQueue.push(achievement);
+    for (const achievement of unlocked) {
+      toastQueue.push(achievement);
+      audio.playAchievementChime();
+    }
+  }
+
+  function playLandingSound(result) {
+    const vyIntensity = Math.min(1, result.verticalSpeed / 15);
+    if (result.delivered) {
+      audio.playSplash(vyIntensity);
+      audio.playDeliveryJingle(result.grade);
+    } else if (result.reason.includes('ditched') || result.reason.includes('hull gave out')) {
+      audio.playSplash(Math.max(0.6, vyIntensity));
+      audio.playCrashThud();
+    } else if (result.reason.startsWith('struck')) {
+      audio.playCrashThud();
+    }
   }
 
   function finishFlightIfNeeded() {
     if (!flight || flightRecorded) return;
     if (flight.phase !== PHASE_LANDED && flight.phase !== PHASE_CRASHED) return;
     flightRecorded = true;
+    audio.stopEngine();
+    playLandingSound(flight.result);
     const routeForRecord = flight.route;
-    const unlocked = recordFlightResult(ui.campaign, routeForRecord, flight.result);
+    const { unlocked, award } = recordFlightResult(ui.campaign, routeForRecord, flight.result);
+    if (award) Object.assign(flight.result, award);
     queueAchievementToasts(unlocked);
     if (routeForRecord.isEndless) endlessRun = flight.result.delivered ? endlessRun + 1 : 0;
-    announce(flight.result.delivered ? `Delivered. +${flight.result.score} credits.` : `Flight lost: ${flight.result.reason}.`);
+    announce(flight.result.delivered ? `Delivered. +${flight.result.awardedScore} credits.` : `Flight lost: ${flight.result.reason}.`);
   }
 
   function proceedAfterFlight() {
@@ -181,6 +215,17 @@ function runGame() {
     }
     const controls = input.flightControls();
     stepFlight(flight, controls, dt);
+    const aircraft = flight.aircraft;
+    audio.updateEngine(aircraft.throttle, aircraft.stalled);
+    const fuelFrac = aircraft.fuel / aircraft.stats.fuelCapacity;
+    const warning = aircraft.stalled || fuelFrac < FLIGHT.criticalFuelFraction || fuelFrac < FLIGHT.lowFuelFraction;
+    warningBeepTimer -= dt;
+    if (warning && warningBeepTimer <= 0) {
+      audio.playWarningBeep();
+      warningBeepTimer = 1.6;
+    } else if (!warning) {
+      warningBeepTimer = 0;
+    }
     finishFlightIfNeeded();
   }
 
@@ -207,10 +252,13 @@ function runGame() {
           toast: currentToast,
           lightning: flight.weather.kind === 'storm' && weatherStrengthNow() > 0.4 && Math.random() < 0.02,
           weatherStrength: weatherStrengthNow(),
+          combo: ui.campaign.combo,
+          comboMultiplier: comboMultiplier(ui.campaign.combo),
+          muted: audio.isMuted(),
         },
       };
     }
-    if (screen === SCREEN_BRIEFING) return { screen, ui: { route: ui.briefRoute, contract: ui.briefContract } };
+    if (screen === SCREEN_BRIEFING) return { screen, ui: { route: ui.briefRoute, contract: ui.briefContract, campaign: ui.campaign } };
     if (screen === SCREEN_HARBOR) return { screen, ui };
     return { screen, campaign: ui.campaign };
   }
@@ -221,6 +269,7 @@ function runGame() {
     last = now;
     accumulator += dt;
     if (input.takeConfirm()) handleConfirm();
+    if (input.takeMuteToggle()) audio.toggleMute();
     const clickedPoint = input.takeClick();
     if (clickedPoint) handleClick(clickedPoint);
     while (accumulator >= STEP) {

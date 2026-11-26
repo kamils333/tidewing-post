@@ -41,10 +41,17 @@ export const CONTROL = {
 export const FLIGHT = {
   cruiseAltitudeHint: 140,
   approachAltitude: 36, // below this, over the dock zone, is "on approach"
-  safeTouchdownSpeed: 3.0, // m/s vertical speed that always reads as a clean landing
+  perfectTouchdownSpeed: 1.2, // m/s vertical speed at or under which a landing grades Perfect
+  safeTouchdownSpeed: 3.0, // m/s vertical speed at or under which a landing grades Smooth, not Rough
   driftDangerDeg: 26, // heading deviation past which a touchdown is read as crosswind-crossed
   lowFuelFraction: 0.22,
   criticalFuelFraction: 0.08,
+};
+
+/** Consecutive Perfect/Smooth landings build a score multiplier; one Rough landing resets it. */
+export const COMBO = {
+  stepPerLanding: 0.12,
+  maxMultiplier: 2.5,
 };
 
 export const WEATHER = {
@@ -80,6 +87,9 @@ export const PALETTE = {
   engine: '#5a5f6b',
   float: '#2f4a52',
   cabinGlow: '#ffdd8a',
+  livery: '#c9502f',
+  liveryDark: '#8a3620',
+  windowFrame: '#2a2018',
   text: '#f4ecd8',
   muted: '#b8ac92',
   warn: '#ff6b5e',

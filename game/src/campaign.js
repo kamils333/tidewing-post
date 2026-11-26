@@ -3,7 +3,7 @@
 // this browser's storage so a visit can pick up where the last one left off.
 import { ROUTES, findRoute } from './geo.js';
 import { applyUpgrades, findUpgrade, UPGRADE_COUNT } from './upgrades.js';
-import { AIRCRAFT_BASE, SAVE_KEY } from './config.js';
+import { AIRCRAFT_BASE, SAVE_KEY, COMBO } from './config.js';
 import { ACHIEVEMENTS, ACHIEVEMENT_COUNT } from './achievements.js';
 
 export function createCampaign() {
@@ -14,11 +14,17 @@ export function createCampaign() {
     completedContracts: new Set(),
     money: 220,
     endlessRun: 0,
+    combo: 0,
     totals: { deliveries: 0, crashes: 0, cleanStreak: 0, bestEndlessRun: 0 },
     lastDebrief: null,
   };
   load(campaign);
   return campaign;
+}
+
+/** A clean landing streak's reward: +12% a landing, capped at 2.5x, reset by any Rough one. */
+export function comboMultiplier(combo) {
+  return Math.min(COMBO.maxMultiplier, 1 + combo * COMBO.stepPerLanding);
 }
 
 export function campaignStats(campaign) {
@@ -48,13 +54,21 @@ export function routeIsUnlocked(campaign, routeId) {
 }
 
 /**
- * Fold one flight's debrief into the logbook: money, delivery totals, streaks and unlocks.
- * Returns the achievements newly earned this call, if any, so the UI can toast them.
+ * Fold one flight's debrief into the logbook: money (with the combo multiplier a Perfect or
+ * Smooth landing streak has earned), delivery totals, streaks and unlocks. Returns the
+ * achievements newly earned this call (for a toast) and the award this landing paid out (for
+ * the score popup), or null awards for a crash.
  */
 export function recordFlightResult(campaign, route, debrief) {
   campaign.lastDebrief = debrief;
+  let award = null;
   if (debrief.delivered) {
-    campaign.money += debrief.score;
+    if (debrief.grade === 'rough') campaign.combo = 0;
+    else campaign.combo += 1;
+    const multiplier = debrief.grade === 'rough' ? 1 : comboMultiplier(campaign.combo);
+    const awardedScore = Math.round(debrief.score * multiplier);
+    award = { baseScore: debrief.score, multiplier, combo: campaign.combo, awardedScore };
+    campaign.money += awardedScore;
     campaign.totals.deliveries += 1;
     campaign.totals.cleanStreak = debrief.landedClean ? campaign.totals.cleanStreak + 1 : 0;
     if (debrief.contractId) campaign.completedContracts.add(debrief.contractId);
@@ -64,13 +78,14 @@ export function recordFlightResult(campaign, route, debrief) {
       campaign.totals.bestEndlessRun = Math.max(campaign.totals.bestEndlessRun, campaign.endlessRun);
     }
   } else {
+    campaign.combo = 0;
     campaign.totals.crashes += 1;
     campaign.totals.cleanStreak = 0;
     if (route.isEndless) campaign.endlessRun = 0;
   }
   const unlocked = evaluateAchievements(campaign);
   save(campaign);
-  return unlocked;
+  return { unlocked, award };
 }
 
 function evaluateAchievements(campaign) {
@@ -102,6 +117,7 @@ function save(campaign) {
         unlockedAchievements: [...campaign.unlockedAchievements],
         completedContracts: [...campaign.completedContracts],
         money: campaign.money,
+        combo: campaign.combo,
         totals: campaign.totals,
       }),
     );
@@ -120,6 +136,7 @@ function load(campaign) {
     campaign.unlockedAchievements = new Set(data.unlockedAchievements ?? []);
     campaign.completedContracts = new Set(data.completedContracts ?? []);
     campaign.money = typeof data.money === 'number' ? data.money : campaign.money;
+    campaign.combo = typeof data.combo === 'number' ? data.combo : campaign.combo;
     if (data.totals) Object.assign(campaign.totals, data.totals);
   } catch {
     // A corrupt or foreign save is treated as none: start fresh rather than throw.
@@ -133,6 +150,7 @@ export function resetCampaign(campaign) {
   campaign.completedContracts.clear();
   campaign.money = 220;
   campaign.endlessRun = 0;
+  campaign.combo = 0;
   campaign.totals.deliveries = 0;
   campaign.totals.crashes = 0;
   campaign.totals.cleanStreak = 0;

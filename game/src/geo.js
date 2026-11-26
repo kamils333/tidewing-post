@@ -2,15 +2,17 @@
 // touches a canvas or the flight sim. Each route is one leg, Saltmere Harbor to one island or (for
 // the finale and the endless run) a longer leg built from the routes already flown.
 
-export const HOME = { id: 'saltmere', name: 'Saltmere Harbor' };
+export const HOME = { id: 'saltmere', name: 'Saltmere Harbor', map: { x: 0.5, y: 0.54 } };
 
+// map: a point in the 0..1 square the harbour's chart draws into (render.js's drawArchipelagoMap
+// is the only reader); placed to spread the isles out, not to be a precise compass.
 export const ISLANDS = [
-  { id: 'driftwood', name: 'Driftwood Cay', profile: 'low', keeper: 'mirei' },
-  { id: 'kelp', name: 'Kelp Hollow', profile: 'lagoon', keeper: 'benno' },
-  { id: 'thornback', name: 'Thornback Shoal', profile: 'reef', keeper: 'sera' },
-  { id: 'windlass', name: 'Windlass Point', profile: 'ridge', keeper: 'dez' },
-  { id: 'ashfall', name: 'Ashfall Rock', profile: 'volcanic', keeper: 'nat' },
-  { id: 'lastlight', name: 'Last Light Atoll', profile: 'atoll', keeper: 'priya' },
+  { id: 'driftwood', name: 'Driftwood Cay', profile: 'low', keeper: 'mirei', map: { x: 0.8, y: 0.36 } },
+  { id: 'kelp', name: 'Kelp Hollow', profile: 'lagoon', keeper: 'benno', map: { x: 0.74, y: 0.7 } },
+  { id: 'thornback', name: 'Thornback Shoal', profile: 'reef', keeper: 'sera', map: { x: 0.44, y: 0.78 } },
+  { id: 'windlass', name: 'Windlass Point', profile: 'ridge', keeper: 'dez', map: { x: 0.15, y: 0.6 } },
+  { id: 'ashfall', name: 'Ashfall Rock', profile: 'volcanic', keeper: 'nat', map: { x: 0.18, y: 0.3 } },
+  { id: 'lastlight', name: 'Last Light Atoll', profile: 'atoll', keeper: 'priya', map: { x: 0.56, y: 0.2 } },
 ];
 
 /**
