@@ -31,6 +31,7 @@ export function createFlight(route, contract, stats, random) {
     elapsed: 0,
     result: null, // filled once phase is landed or crashed
     hazardLabel: null,
+    waypointCleared: false, // a route.waypoint relay stop, once touched down and refuelled
   };
 }
 
@@ -121,6 +122,10 @@ function scoreDelivery(flight, landedClean, cargoBroken) {
     total += amount;
     lines.push({ label: `Weather survived, x${flight.weatherSeen.size}`, amount });
   }
+  if (flight.route.waypoint && flight.waypointCleared) {
+    total += SCORE.relayBonus;
+    lines.push({ label: 'Relay refuel completed', amount: SCORE.relayBonus });
+  }
   return { total: Math.max(0, Math.round(total)), lines };
 }
 
@@ -166,6 +171,17 @@ export function stepFlight(flight, controls, dt) {
   if (aircraft.altitude <= 0) {
     const damage = touchdownDamage(aircraft);
     aircraft.integrity = Math.max(0, aircraft.integrity - damage);
+
+    const waypoint = flight.route.waypoint;
+    const nearWaypoint = waypoint && !flight.waypointCleared && Math.abs(aircraft.x - waypoint.x) <= (waypoint.radius ?? 110);
+    if (nearWaypoint) {
+      if (aircraft.integrity <= 0) return finish(flight, { delivered: false, reason: 'the hull gave out at the relay stop' });
+      flight.waypointCleared = true;
+      aircraft.fuel = aircraft.stats.fuelCapacity;
+      flight.phase = PHASE_TAXI;
+      return null;
+    }
+
     const nearDock = Math.abs(aircraft.x - flight.route.distance) <= DOCK_HALF_WIDTH;
     if (!nearDock) return finish(flight, { delivered: false, reason: 'ditched short of the island' });
     if (aircraft.integrity <= 0) return finish(flight, { delivered: false, reason: 'the hull gave out on touchdown' });

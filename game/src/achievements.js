@@ -3,6 +3,9 @@
 // earned; evaluateAchievements (campaign.js calls it after every landing) is the only place these
 // run. "Ace of the Amberreach" deliberately depends on the others, so it always unlocks last.
 import { CONTRACT_COUNT } from './contracts.js';
+import { ROUTES } from './geo.js';
+
+const STORY_ROUTE_COUNT = ROUTES.filter((route) => !route.isFinale && !route.isEndless).length;
 
 export const ACHIEVEMENTS = [
   {
@@ -57,7 +60,7 @@ export const ACHIEVEMENTS = [
     id: 'island-hopper',
     name: 'Island Hopper',
     detail: 'Open every route in the Amberreach Isles.',
-    check: (campaign) => campaign.clearedRoutes.size >= 6,
+    check: (campaign) => campaign.clearedRoutes.size >= STORY_ROUTE_COUNT,
   },
   {
     id: 'fully-rigged',

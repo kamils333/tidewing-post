@@ -9,7 +9,7 @@ import { findRoute } from './geo.js';
 import { AIRCRAFT_BASE } from './config.js';
 import { applyUpgrades } from './upgrades.js';
 import { contractsForRoute } from './contracts.js';
-import { createCampaign } from './campaign.js';
+import { createCampaign, comboMultiplier } from './campaign.js';
 import { findAchievement } from './achievements.js';
 import { SCREEN_FLIGHT, SCREEN_HARBOR, SCREEN_TITLE } from './render.js';
 import { STEP } from './config.js';
@@ -104,28 +104,36 @@ function stageStorm(random) {
   const contract = contractsForRoute('windlass')[0];
   const forced = { ...route, weatherTable: ['storm'], forcedWeather: 'storm' };
   const flight = createFlight(forced, contract, stockStats(), random);
-  return flyToward(flight, random, (f) => flightWeatherStrength(f) > 0.6, false);
+  return flyToward(flight, random, (f) => flightWeatherStrength(f) > 0.7, false);
 }
 
 function stageFinale(random) {
   const route = findRoute('finale');
   const contract = contractsForRoute('finale')[0];
   const flight = createFlight(route, contract, stockStats(), random);
-  return flyToward(flight, random, (f) => flightWeatherStrength(f) > 0.5 || route.distance - f.aircraft.x < 180, false);
+  return flyToward(flight, random, (f) => flightWeatherStrength(f) > 0.65, false);
 }
 
+/** The moment a touchdown reveals its grade: early in the result panel's rise, combo included. */
 function stageSplash(random) {
   const flight = flyLanding('driftwood', 0, random) ?? flyLanding('kelp', 0, random);
+  if (flight && flight.result && flight.result.delivered) {
+    const combo = 3;
+    const multiplier = comboMultiplier(combo);
+    flight.result.combo = combo;
+    flight.result.multiplier = multiplier;
+    flight.result.awardedScore = Math.round(flight.result.score * multiplier);
+  }
   return {
     flight,
     blink: true,
     splash: 1,
-    popupAge: 0.5,
-    toast: { achievement: findAchievement('first-wings'), age: 0.7 },
+    popupAge: 0.9,
+    toast: { achievement: findAchievement('first-wings'), age: 0.5 },
     lightning: false,
     weatherStrength: 0,
-    combo: 0,
-    comboMultiplier: 1,
+    combo: 3,
+    comboMultiplier: flight && flight.result ? flight.result.multiplier ?? 1 : 1,
     campaign: createCampaign(),
     shake: 0,
     flash: 0,

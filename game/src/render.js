@@ -35,7 +35,7 @@ const SEA_SCREEN_Y = 534;
 
 /** Click targets on the harbour board; input.js hit-tests against the same numbers this draws. */
 export const HARBOR_LAYOUT = {
-  routes: { x: 56, yStart: 128, rowH: 36, width: 420 },
+  routes: { x: 56, yStart: 124, rowH: 32, width: 420 },
   contracts: { x: 484, yStart: 126, rowH: 92, width: 420 },
   shop: { x: 930, yStart: 108, rowH: 28, width: 280 },
   map: { x: 56, y: 460, width: 1154, height: 178 },
@@ -88,12 +88,20 @@ export function createRenderer(canvas) {
 
   // ---- sky, sea and the islands sliding past --------------------------------------------------
 
-  function drawSky(night) {
+  /** mode is 'dawn', 'dusk' (the default look) or 'night'; each route picks one (render.js only). */
+  function drawSky(mode) {
+    const night = mode === 'night';
+    const dawn = mode === 'dawn';
     const grad = ctx.createLinearGradient(0, 0, 0, SEA_SCREEN_Y);
     if (night) {
       grad.addColorStop(0, '#060814');
       grad.addColorStop(0.55, '#141032');
       grad.addColorStop(1, '#33264a');
+    } else if (dawn) {
+      grad.addColorStop(0, '#223a5e');
+      grad.addColorStop(0.45, '#5a6f93');
+      grad.addColorStop(0.8, '#e8a37a');
+      grad.addColorStop(1, '#ffd9a0');
     } else {
       grad.addColorStop(0, PALETTE.duskTop);
       grad.addColorStop(0.45, PALETTE.duskUpper);
@@ -112,6 +120,11 @@ export function createRenderer(canvas) {
       ctx.fillStyle = 'rgba(230,230,245,0.9)';
       ctx.beginPath();
       ctx.arc(FIELD.width - 160, 110, 36, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (dawn) {
+      ctx.fillStyle = 'rgba(255, 244, 220, 0.95)';
+      ctx.beginPath();
+      ctx.arc(FIELD.width * 0.28, SEA_SCREEN_Y - 10, 40, 0, Math.PI * 2);
       ctx.fill();
     } else {
       ctx.fillStyle = 'rgba(255, 221, 150, 0.9)';
@@ -199,11 +212,13 @@ export function createRenderer(canvas) {
     grad.addColorStop(1, PALETTE.sea);
     ctx.fillStyle = grad;
     ctx.fillRect(0, SEA_SCREEN_Y, FIELD.width, FIELD.height - SEA_SCREEN_Y);
+    const t = performance.now() / 1000;
     ctx.strokeStyle = 'rgba(255, 235, 200, 0.18)';
     ctx.lineWidth = 2;
     for (let band = 0; band < 5; band += 1) {
       const speed = 0.4 + band * 0.22;
-      const y = SEA_SCREEN_Y + 18 + band * 34;
+      // A slow vertical breathing on top of the horizontal scroll, so the water never sits still.
+      const y = SEA_SCREEN_Y + 18 + band * 34 + Math.sin(t * 0.7 + band * 1.3) * 2.5;
       const offset = (x * speed) % 160;
       ctx.beginPath();
       for (let sx = -160 + offset; sx < FIELD.width + 160; sx += 160) {
@@ -213,6 +228,13 @@ export function createRenderer(canvas) {
       }
       ctx.stroke();
     }
+    // A sunset glint drifting across the surface, the one reflection the water keeps.
+    const glintX = ((Math.sin(t * 0.25) + 1) / 2) * FIELD.width;
+    const glintGrad = ctx.createRadialGradient(glintX, SEA_SCREEN_Y + 30, 4, glintX, SEA_SCREEN_Y + 30, 220);
+    glintGrad.addColorStop(0, 'rgba(255, 230, 180, 0.22)');
+    glintGrad.addColorStop(1, 'rgba(255, 230, 180, 0)');
+    ctx.fillStyle = glintGrad;
+    ctx.fillRect(0, SEA_SCREEN_Y, FIELD.width, FIELD.height - SEA_SCREEN_Y);
   }
 
   /** Each isle's own silhouette behind its dock, so the world is more than six blank docks. */
@@ -308,7 +330,7 @@ export function createRenderer(canvas) {
     }
   }
 
-  function drawDestination(route, island, distanceLeft, visibleRange) {
+  function drawDestination(route, island, distanceLeft, visibleRange, celebrate) {
     if (!island || distanceLeft > visibleRange) return 0;
     const t = Math.max(0, Math.min(1, distanceLeft / visibleRange));
     const screenX = PLANE_SCREEN_X + 220 + t * (FIELD.width - PLANE_SCREEN_X - 260);
@@ -326,13 +348,39 @@ export function createRenderer(canvas) {
     ctx.fillStyle = PALETTE.hullShade;
     ctx.fillRect(screenX - 10, SEA_SCREEN_Y - 4, 70, 8);
     drawIslandLandmark(island.profile, screenX, SEA_SCREEN_Y);
-    if (distanceLeft < visibleRange * 0.55) {
+    if (distanceLeft < visibleRange * 0.55 && !celebrate) {
       const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 220);
       ctx.strokeStyle = `rgba(255, 210, 122, ${0.5 + pulse * 0.4})`;
       ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.ellipse(screenX + 15, SEA_SCREEN_Y - 6, 46 + pulse * 6, 16 + pulse * 3, 0, 0, Math.PI * 2);
       ctx.stroke();
+    }
+    if (celebrate > 0) {
+      // A small flag runs up the dock pole, and one last ring of spray marks the safe arrival.
+      const poleX = screenX - 4;
+      const poleTop = SEA_SCREEN_Y - 34;
+      ctx.strokeStyle = PALETTE.hullShade;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(poleX, SEA_SCREEN_Y);
+      ctx.lineTo(poleX, poleTop);
+      ctx.stroke();
+      const flagY = SEA_SCREEN_Y - celebrate * 30;
+      ctx.fillStyle = PALETTE.livery;
+      ctx.beginPath();
+      ctx.moveTo(poleX, flagY);
+      ctx.lineTo(poleX + 16, flagY + 5);
+      ctx.lineTo(poleX, flagY + 10);
+      ctx.closePath();
+      ctx.fill();
+      if (celebrate < 1) {
+        ctx.strokeStyle = `rgba(255, 244, 214, ${0.7 * (1 - celebrate)})`;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.ellipse(screenX + 15, SEA_SCREEN_Y - 4, 20 + celebrate * 70, 8 + celebrate * 22, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
     ctx.restore();
     return screenX;
@@ -517,6 +565,105 @@ export function createRenderer(canvas) {
 
   // ---- the result screen (shown over the flight scene once it has ended) --------------------
 
+  /** A small procedural face: a neutral head, simple eyes, and a coloured hat or hair shape. */
+  function drawPortrait(cx, cy, r, portrait) {
+    ctx.save();
+    ctx.fillStyle = PALETTE.hull;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = PALETTE.panelEdge;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#2a2018';
+    ctx.beginPath();
+    ctx.arc(cx - r * 0.32, cy - r * 0.05, r * 0.09, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx + r * 0.32, cy - r * 0.05, r * 0.09, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#2a2018';
+    ctx.lineWidth = r * 0.07;
+    ctx.beginPath();
+    ctx.arc(cx, cy + r * 0.2, r * 0.3, 0.15 * Math.PI, 0.85 * Math.PI);
+    ctx.stroke();
+    ctx.fillStyle = portrait.color;
+    if (portrait.hat === 'cap') {
+      ctx.beginPath();
+      ctx.ellipse(cx, cy - r * 0.72, r * 0.98, r * 0.5, 0, Math.PI, 0);
+      ctx.fill();
+      ctx.fillRect(cx - r * 0.98, cy - r * 0.76, r * 1.96, r * 0.3);
+    } else if (portrait.hat === 'scarf') {
+      ctx.beginPath();
+      ctx.ellipse(cx, cy - r * 0.58, r * 1.04, r * 0.7, 0, Math.PI, 0);
+      ctx.fill();
+    } else if (portrait.hat === 'hood') {
+      ctx.beginPath();
+      ctx.arc(cx, cy - r * 0.05, r * 1.1, Math.PI * 1.08, Math.PI * 1.92);
+      ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 1.02, Math.PI * 1.12, Math.PI * 1.88);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  /** Shortens a line to fit maxWidth, with an ellipsis, rather than let it overrun a fixed column. */
+  function truncateToWidth(value, maxWidth, size) {
+    ctx.font = `${size}px ${FONT}`;
+    if (ctx.measureText(value).width <= maxWidth) return value;
+    let lo = 0;
+    let hi = value.length;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (ctx.measureText(`${value.slice(0, mid)}...`).width <= maxWidth) lo = mid;
+      else hi = mid - 1;
+    }
+    return `${value.slice(0, lo)}...`;
+  }
+
+  function wrapText(value, maxWidth, size) {
+    ctx.font = `${size}px ${FONT}`;
+    const words = value.split(' ');
+    const lines = [];
+    let line = '';
+    for (const word of words) {
+      const next = line ? `${line} ${word}` : word;
+      if (ctx.measureText(next).width > maxWidth && line) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = next;
+      }
+    }
+    if (line) lines.push(line);
+    return lines;
+  }
+
+  /** The arrival: a speech bubble (with a tail toward the portrait) holding the islander's line. */
+  function drawSpeechBubble(x, y, width, value, size) {
+    const lines = wrapText(`"${value}"`, width - 24, size);
+    const lineHeight = size + 7;
+    const height = lines.length * lineHeight + 16;
+    ctx.fillStyle = 'rgba(40, 32, 46, 0.9)';
+    ctx.strokeStyle = PALETTE.panelEdge;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.rect(x, y, width, height);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, y + height * 0.4);
+    ctx.lineTo(x - 10, y + height * 0.5);
+    ctx.lineTo(x, y + height * 0.6);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(40, 32, 46, 0.9)';
+    ctx.fill();
+    lines.forEach((ln, i) => text(ln, x + 12, y + 20 + i * lineHeight, size, PALETTE.text, 'left'));
+    return height;
+  }
+
   function drawResultPanel(flight, campaign, popupAge) {
     const result = flight.result;
     const contract = flight.contract;
@@ -524,7 +671,7 @@ export function createRenderer(canvas) {
     const lineCount = result.delivered ? result.scoreLines.length : 0;
     const extra = result.delivered && result.multiplier > 1 ? 1 : 0;
     const panelW = 640;
-    const panelH = result.delivered ? 300 + (lineCount + extra) * 24 : 230;
+    const panelH = result.delivered ? 440 + (lineCount + extra) * 24 : 230;
     const px = FIELD.width / 2 - panelW / 2;
     const py = FIELD.height / 2 - panelH / 2 + (1 - riseIn) * 26;
 
@@ -559,9 +706,19 @@ export function createRenderer(canvas) {
       ctx.stroke();
       y += 32;
       text(`TOTAL  +${result.awardedScore ?? result.score} credits`, FIELD.width / 2, y, 22, PALETTE.good, 'center', 'bold');
-      y += 36;
-      if (contract) text(clientReaction(NPCS[contract.client], result), FIELD.width / 2, y, 14, PALETTE.muted, 'center');
-      y += 26;
+      y += 34;
+      if (contract) {
+        const npc = NPCS[contract.client];
+        const greeting = result.repeatDelivery ? npc.returnLine : npc.line;
+        const portraitX = px + 66;
+        const portraitY = y + 18;
+        drawPortrait(portraitX, portraitY, 24, npc.portrait);
+        text(npc.name, portraitX, portraitY + 40, 12, PALETTE.muted, 'center');
+        const bubbleHeight = drawSpeechBubble(portraitX + 40, y - 10, panelW - 160, greeting, 13);
+        y += bubbleHeight + 14;
+        text(clientReaction(npc, result), FIELD.width / 2, y, 13, PALETTE.muted, 'center');
+        y += 22;
+      }
       const next = suggestedRoute(campaign.clearedRoutes);
       text(next ? `Next: ${next.name} is open.` : 'Every route in the Amberreach Isles is open.', FIELD.width / 2, y, 14, PALETTE.ring, 'center');
     } else {
@@ -581,7 +738,8 @@ export function createRenderer(canvas) {
     const stats = aircraft.stats;
     const route = flight.route;
     const island = findIsland(route.island);
-    const night = Boolean(route.isFinale);
+    const timeOfDay = route.timeOfDay ?? (route.isFinale || route.isNight ? 'night' : 'dusk');
+    const night = timeOfDay === 'night';
     const visibleRange = (stats.visibilityBase ?? AIRCRAFT_BASE.visibilityBase) * (flight.weather.kind === 'fog' ? 0.42 : 1);
     const ended = flight.phase === 'landed' || flight.phase === 'crashed';
 
@@ -592,7 +750,7 @@ export function createRenderer(canvas) {
       ctx.translate((hashTile(tick) - 0.5) * 20 * shake, (hashTile(tick + 500) - 0.5) * 20 * shake);
     }
 
-    drawSky(night);
+    drawSky(timeOfDay);
     if (!night) drawClouds(aircraft.x);
     drawBirds(aircraft.x);
     drawFarIslands(aircraft.x);
@@ -602,7 +760,8 @@ export function createRenderer(canvas) {
     ctx.translate(0, -horizonShift);
     drawSea(aircraft.x);
     const distanceLeft = route.distance - aircraft.x;
-    drawDestination(route, island, distanceLeft, visibleRange);
+    const celebrate = ended && flight.phase === 'landed' ? Math.min(1, popupAge / 0.8) : 0;
+    drawDestination(route, island, distanceLeft, visibleRange, celebrate);
     drawHazardMarker(flight.hazardLabel, Boolean(flight.hazardLabel));
     ctx.restore();
 
@@ -730,7 +889,7 @@ export function createRenderer(canvas) {
   }
 
   function drawTitleScreen(campaign) {
-    drawSky(false);
+    drawSky('dusk');
     drawClouds(performance.now() / 40);
     drawBirds(performance.now() / 40);
     drawFarIslands(performance.now() / 40);
@@ -741,8 +900,8 @@ export function createRenderer(canvas) {
     drawControlDiagram(FIELD.width / 2 - 90, 290);
     text('Mute the engine and the rest with M.', FIELD.width / 2, 450, 15, PALETTE.muted, 'center');
     text(`${campaign.totals.deliveries} deliveries flown - ${campaign.unlockedAchievements.size}/${ACHIEVEMENTS.length} feats earned`, FIELD.width / 2, 480, 16, PALETTE.muted, 'center');
-    text('The first run out to Driftwood Cay is calm water, to get your bearings.', FIELD.width / 2, 540, 16, PALETTE.muted, 'center');
-    text('Click or press Space to open the harbour board', FIELD.width / 2, 620, 22, PALETTE.ring, 'center');
+    text('The first run out to Driftwood Cay is calm water, to get your bearings.', FIELD.width / 2, 572, 16, PALETTE.muted, 'center');
+    text('Click or press Space to open the harbour board', FIELD.width / 2, 630, 22, PALETTE.ring, 'center');
   }
 
   function routeStatusLabel(route, campaign) {
@@ -828,7 +987,7 @@ export function createRenderer(canvas) {
   function drawHarborScreen(ui) {
     const { campaign, selectedRouteId, selectedContractId, hoverUpgrade } = ui;
     const L = HARBOR_LAYOUT;
-    drawSky(false);
+    drawSky('dusk');
     drawSea(80);
     panel(40, 30, FIELD.width - 80, FIELD.height - 60);
     text('SALTMERE HARBOR - TIDEWING POST DISPATCH', 64, 66, 24, PALETTE.text, 'left', 'bold');
@@ -867,7 +1026,7 @@ export function createRenderer(canvas) {
         const done = campaign.completedContracts.has(contract.id);
         text(`${contract.title}${done ? '  (flown)' : ''}`, L.contracts.x, y, 18, done ? PALETTE.good : PALETTE.text, 'left', 'bold');
         text(`${npc.name}, ${npc.role}`, L.contracts.x, y + 20, 13, PALETTE.muted, 'left');
-        text(`"${done ? npc.returnLine : npc.line}"`, L.contracts.x, y + 38, 13, PALETTE.ring, 'left');
+        text(`"${truncateToWidth(done ? npc.returnLine : npc.line, L.contracts.width - 16, 13)}"`, L.contracts.x, y + 38, 13, PALETTE.ring, 'left');
         text(`${contract.cargoKg} kg${contract.fragile ? ' - fragile' : ''}`, L.contracts.x, y + 56, 13, PALETTE.muted, 'left');
       });
     }
@@ -900,7 +1059,7 @@ export function createRenderer(canvas) {
 
   function drawBriefingScreen(ui) {
     const { route, contract, campaign } = ui;
-    drawSky(Boolean(route.isFinale));
+    drawSky(route.isFinale || route.isNight ? 'night' : 'dusk');
     drawSea(60);
     panel(FIELD.width / 2 - 360, 150, 720, 420);
     text(route.name, FIELD.width / 2, 210, 30, PALETTE.text, 'center', 'bold');

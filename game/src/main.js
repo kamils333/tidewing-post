@@ -303,7 +303,7 @@ function runGame() {
   requestAnimationFrame(frame);
   window.__tidewingDebug = () => ({
     screen,
-    flight: flight ? { phase: flight.phase, x: flight.aircraft.x, altitude: flight.aircraft.altitude, speed: flight.aircraft.speed, vy: flight.aircraft.vy, distance: flight.route.distance, weather: flight.weather.kind, hazards: flight.route.hazards, result: flight.result } : null,
+    flight: flight ? { phase: flight.phase, x: flight.aircraft.x, altitude: flight.aircraft.altitude, speed: flight.aircraft.speed, vy: flight.aircraft.vy, distance: flight.route.distance, weather: flight.weather.kind, hazards: flight.route.hazards, result: flight.result, waypoint: flight.route.waypoint, waypointCleared: flight.waypointCleared } : null,
     cleared: [...ui.campaign.clearedRoutes],
     money: ui.campaign.money,
     achievements: [...ui.campaign.unlockedAchievements],

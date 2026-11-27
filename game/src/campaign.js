@@ -67,7 +67,9 @@ export function recordFlightResult(campaign, route, debrief) {
     else campaign.combo += 1;
     const multiplier = debrief.grade === 'rough' ? 1 : comboMultiplier(campaign.combo);
     const awardedScore = Math.round(debrief.score * multiplier);
-    award = { baseScore: debrief.score, multiplier, combo: campaign.combo, awardedScore };
+    // Capture this before adding, so the arrival scene can greet a first delivery differently.
+    const repeatDelivery = Boolean(debrief.contractId) && campaign.completedContracts.has(debrief.contractId);
+    award = { baseScore: debrief.score, multiplier, combo: campaign.combo, awardedScore, repeatDelivery };
     campaign.money += awardedScore;
     campaign.totals.deliveries += 1;
     campaign.totals.cleanStreak = debrief.landedClean ? campaign.totals.cleanStreak + 1 : 0;

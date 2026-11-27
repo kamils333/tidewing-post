@@ -75,6 +75,7 @@ export const SCORE = {
   fragileBroken: -70,
   lowFuelBonus: 40,
   weatherBonus: 50, // per distinct weather type survived this flight
+  relayBonus: 70, // a route.waypoint relay stop, touched down and refuelled
   damagePenaltyPerPoint: 2,
 };
 
