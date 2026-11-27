@@ -9,6 +9,7 @@ import { contractsForRoute } from './contracts.js';
 import { UPGRADES } from './upgrades.js';
 import { ACHIEVEMENTS } from './achievements.js';
 import { KIND_CROSSWIND, KIND_FOG, KIND_STORM } from './weather.js';
+import { isInDockZone } from './flight.js';
 import {
   drawAltitudeTape,
   drawAirspeedTape,
@@ -36,7 +37,7 @@ const SEA_SCREEN_Y = 534;
 /** Click targets on the harbour board; input.js hit-tests against the same numbers this draws. */
 export const HARBOR_LAYOUT = {
   routes: { x: 56, yStart: 124, rowH: 32, width: 420 },
-  contracts: { x: 484, yStart: 126, rowH: 92, width: 420 },
+  contracts: { x: 484, yStart: 126, rowH: 108, width: 420 },
   shop: { x: 930, yStart: 108, rowH: 28, width: 280 },
   map: { x: 56, y: 460, width: 1154, height: 178 },
   flyButton: { x: 940, y: FIELD.height - 70, width: 180, height: 40 },
@@ -76,6 +77,13 @@ export function createRenderer(canvas) {
     ctx.textAlign = align ?? 'left';
     ctx.textBaseline = 'alphabetic';
     ctx.fillText(value, x, y);
+  }
+
+  /** Keeps a centred map label's full width inside panel m, for markers near its left/right edge. */
+  function clampLabelCenterX(centerX, value, size, m) {
+    ctx.font = `${size}px ${FONT}`;
+    const halfWidth = ctx.measureText(value).width / 2;
+    return Math.min(m.x + m.width - 8 - halfWidth, Math.max(m.x + 8 + halfWidth, centerX));
   }
 
   function panel(x, y, w, h) {
@@ -167,7 +175,8 @@ export function createRenderer(canvas) {
     }
   }
 
-  function drawClouds(x) {
+  function drawClouds(x, cyRange) {
+    const [cyMin, cySpan] = cyRange ?? [60, 170];
     ctx.save();
     ctx.fillStyle = 'rgba(255, 244, 232, 0.8)';
     for (let i = -1; i < 8; i += 1) {
@@ -176,7 +185,7 @@ export function createRenderer(canvas) {
       const wobble = hashTile(tileIndex + 97);
       const screenX = PLANE_SCREEN_X - 700 + (tileIndex * spacing - x) * 0.2 + wobble * 120;
       if (screenX < -220 || screenX > FIELD.width + 220) continue;
-      const cy = 60 + wobble * 170;
+      const cy = cyMin + wobble * cySpan;
       const scale = 0.9 + wobble * 0.9;
       for (const [dx, dy, r] of [[0, 0, 26], [22, -8, 20], [-24, -4, 18], [10, 8, 22], [-10, 10, 16]]) {
         ctx.beginPath();
@@ -609,20 +618,6 @@ export function createRenderer(canvas) {
     ctx.restore();
   }
 
-  /** Shortens a line to fit maxWidth, with an ellipsis, rather than let it overrun a fixed column. */
-  function truncateToWidth(value, maxWidth, size) {
-    ctx.font = `${size}px ${FONT}`;
-    if (ctx.measureText(value).width <= maxWidth) return value;
-    let lo = 0;
-    let hi = value.length;
-    while (lo < hi) {
-      const mid = (lo + hi + 1) >> 1;
-      if (ctx.measureText(`${value.slice(0, mid)}...`).width <= maxWidth) lo = mid;
-      else hi = mid - 1;
-    }
-    return `${value.slice(0, lo)}...`;
-  }
-
   function wrapText(value, maxWidth, size) {
     ctx.font = `${size}px ${FONT}`;
     const words = value.split(' ');
@@ -771,7 +766,12 @@ export function createRenderer(canvas) {
     drawWeatherOverlay(flight.weather.kind, scene.weatherStrength, flight.windSign);
     drawLightning(lightning);
 
-    drawAltitudeTape(ctx, aircraft.altitude, Boolean(flight.hazardLabel));
+    // A recommended-altitude cue: a glide path down to the dock (distance * 0.12), never below
+    // what a hazard still ahead needs, and brought to 0 once inside the dock zone itself.
+    const upcomingHazards = route.hazards.filter((h) => aircraft.x <= h.end);
+    const hazardFloor = upcomingHazards.reduce((max, h) => Math.max(max, h.minAltitude), 0);
+    const recommendedAltitude = isInDockZone(flight) ? 0 : Math.max(hazardFloor, Math.max(0, distanceLeft) * 0.12);
+    drawAltitudeTape(ctx, aircraft.altitude, Boolean(flight.hazardLabel), recommendedAltitude);
     drawAirspeedTape(ctx, aircraft.speed, aircraft.stalled);
     drawHeadingTape(ctx, route.heading, aircraft.courseDeviation, 26);
     drawFuelGauge(ctx, aircraft.fuel / stats.fuelCapacity);
@@ -890,7 +890,8 @@ export function createRenderer(canvas) {
 
   function drawTitleScreen(campaign) {
     drawSky('dusk');
-    drawClouds(performance.now() / 40);
+    // A band hugging the top of the sky, clear of the title and subtitle text below it.
+    drawClouds(performance.now() / 40, [15, 50]);
     drawBirds(performance.now() / 40);
     drawFarIslands(performance.now() / 40);
     drawSea(performance.now() / 40);
@@ -972,8 +973,11 @@ export function createRenderer(canvas) {
         ctx.fill();
       }
       const labelColor = status === 'LOCKED' ? PALETTE.muted : PALETTE.text;
-      text(status === 'LOCKED' ? `[locked] ${island.name}` : island.name, point.x, point.y + 24, 12, labelColor, 'center');
-      if (route.gimmick && status !== 'LOCKED') text(route.gimmick.name, point.x, point.y + 38, 11, PALETTE.ring, 'center');
+      const label = status === 'LOCKED' ? `[locked] ${island.name}` : island.name;
+      text(label, clampLabelCenterX(point.x, label, 12, m), point.y + 24, 12, labelColor, 'center');
+      if (route.gimmick && status !== 'LOCKED') {
+        text(route.gimmick.name, clampLabelCenterX(point.x, route.gimmick.name, 11, m), point.y + 38, 11, PALETTE.ring, 'center');
+      }
     }
 
     ctx.fillStyle = PALETTE.ring;
@@ -1026,8 +1030,9 @@ export function createRenderer(canvas) {
         const done = campaign.completedContracts.has(contract.id);
         text(`${contract.title}${done ? '  (flown)' : ''}`, L.contracts.x, y, 18, done ? PALETTE.good : PALETTE.text, 'left', 'bold');
         text(`${npc.name}, ${npc.role}`, L.contracts.x, y + 20, 13, PALETTE.muted, 'left');
-        text(`"${truncateToWidth(done ? npc.returnLine : npc.line, L.contracts.width - 16, 13)}"`, L.contracts.x, y + 38, 13, PALETTE.ring, 'left');
-        text(`${contract.cargoKg} kg${contract.fragile ? ' - fragile' : ''}`, L.contracts.x, y + 56, 13, PALETTE.muted, 'left');
+        const quoteLines = wrapText(`"${done ? npc.returnLine : npc.line}"`, L.contracts.width - 16, 13);
+        quoteLines.forEach((line, li) => text(line, L.contracts.x, y + 38 + li * 16, 13, PALETTE.ring, 'left'));
+        text(`${contract.cargoKg} kg${contract.fragile ? ' - fragile' : ''}`, L.contracts.x, y + 38 + quoteLines.length * 16 + 2, 13, PALETTE.muted, 'left');
       });
     }
 

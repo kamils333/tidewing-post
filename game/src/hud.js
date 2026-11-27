@@ -22,7 +22,7 @@ function label(ctx, text, x, y, size, color, align) {
 }
 
 /** A vertical tape gauge: the current value centred, ticks every `step`, newest-reads-up. */
-function drawTape(ctx, x, value, step, digits, title, danger, flip) {
+function drawTape(ctx, x, value, step, digits, title, danger, flip, markerValue) {
   panelRect(ctx, x, TAPE.top, TAPE.width, TAPE.height);
   ctx.save();
   ctx.beginPath();
@@ -30,10 +30,10 @@ function drawTape(ctx, x, value, step, digits, title, danger, flip) {
   ctx.clip();
   const centreY = TAPE.top + TAPE.height / 2;
   const pxPerUnit = 2.1;
+  const dir = flip ? -1 : 1;
   const base = Math.floor(value / step) * step;
   for (let i = -6; i <= 6; i += 1) {
     const tickValue = base + i * step;
-    const dir = flip ? -1 : 1;
     const ty = centreY + dir * (tickValue - value) * pxPerUnit;
     if (ty < TAPE.top - 10 || ty > TAPE.top + TAPE.height + 10) continue;
     ctx.strokeStyle = PALETTE.muted;
@@ -44,6 +44,28 @@ function drawTape(ctx, x, value, step, digits, title, danger, flip) {
     ctx.stroke();
     if (tickValue % (step * 2) === 0) label(ctx, String(Math.round(tickValue)), x + 36, ty + 5, 15, PALETTE.muted, 'left');
   }
+  // The approach guide: where to be right now on a safe glide to the dock, not below what a
+  // hazard still ahead needs. Fly to put the current-value box over this line.
+  if (Number.isFinite(markerValue)) {
+    const my = centreY + dir * (markerValue - value) * pxPerUnit;
+    if (my >= TAPE.top - 2 && my <= TAPE.top + TAPE.height + 2) {
+      ctx.strokeStyle = PALETTE.ring;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.moveTo(x, my);
+      ctx.lineTo(x + TAPE.width, my);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = PALETTE.ring;
+      ctx.beginPath();
+      ctx.moveTo(x + TAPE.width, my - 6);
+      ctx.lineTo(x + TAPE.width + 10, my);
+      ctx.lineTo(x + TAPE.width, my + 6);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
   ctx.restore();
   const readoutColor = danger ? PALETTE.warn : PALETTE.good;
   ctx.fillStyle = readoutColor;
@@ -52,8 +74,8 @@ function drawTape(ctx, x, value, step, digits, title, danger, flip) {
   label(ctx, title, x + TAPE.width / 2, TAPE.top - 10, 15, PALETTE.muted, 'center');
 }
 
-export function drawAltitudeTape(ctx, altitude, hazardNear) {
-  drawTape(ctx, FIELD.width - 110, altitude, 20, 0, 'ALT m', hazardNear, true);
+export function drawAltitudeTape(ctx, altitude, hazardNear, recommendedAltitude) {
+  drawTape(ctx, FIELD.width - 110, altitude, 20, 0, 'ALT m', hazardNear, true, recommendedAltitude);
 }
 
 export function drawAirspeedTape(ctx, speed, stalled) {
