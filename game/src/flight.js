@@ -58,17 +58,29 @@ function landingGrade(vy, integrity) {
   return 'smooth';
 }
 
+/** The result screen's letter grade: a short read on the whole delivery, not just the touchdown. */
+function overallRank(grade, fuelFrac, cargoBroken) {
+  if (grade === 'rough') return fuelFrac < 0.15 ? 'C' : 'B';
+  if (cargoBroken) return 'B';
+  if (grade === 'perfect' && fuelFrac > 0.4) return 'S';
+  return 'A';
+}
+
 function finish(flight, outcome) {
   const aircraft = flight.aircraft;
   const landedClean = outcome.delivered && Math.abs(aircraft.vy) < FLIGHT.safeTouchdownSpeed && aircraft.integrity >= 100;
+  const grade = outcome.delivered ? landingGrade(Math.abs(aircraft.vy), aircraft.integrity) : null;
+  const fuelFrac = fuelFraction(aircraft);
+  const breakdown = outcome.delivered ? scoreDelivery(flight, landedClean, outcome.cargoBroken) : { total: 0, lines: [] };
   flight.phase = outcome.delivered ? PHASE_LANDED : PHASE_CRASHED;
   flight.result = {
     delivered: outcome.delivered,
     reason: outcome.reason,
     landedClean,
-    grade: outcome.delivered ? landingGrade(Math.abs(aircraft.vy), aircraft.integrity) : null,
+    grade,
+    rank: outcome.delivered ? overallRank(grade, fuelFrac, outcome.cargoBroken ?? false) : null,
     verticalSpeed: Math.abs(aircraft.vy),
-    fuelFraction: fuelFraction(aircraft),
+    fuelFraction: fuelFrac,
     weatherSeen: flight.weatherSeen,
     contractId: flight.contract ? flight.contract.id : null,
     cargoKg: flight.contract ? flight.contract.cargoKg : 0,
@@ -76,20 +88,40 @@ function finish(flight, outcome) {
     cargoBroken: outcome.cargoBroken ?? false,
     distance: flight.route.distance,
     integrity: aircraft.integrity,
-    score: outcome.delivered ? scoreDelivery(flight, landedClean, outcome.cargoBroken) : 0,
+    score: breakdown.total,
+    scoreLines: breakdown.lines,
   };
   return flight.result;
 }
 
 function scoreDelivery(flight, landedClean, cargoBroken) {
   const contract = flight.contract;
-  let score = SCORE.baseDelivery;
-  if (contract) score += contract.cargoKg * SCORE.perKg;
-  if (landedClean) score += SCORE.cleanLandingBonus;
-  if (contract && contract.fragile) score += cargoBroken ? SCORE.fragileBroken : SCORE.fragileIntact;
-  if (fuelFraction(flight.aircraft) > 0.5) score += SCORE.lowFuelBonus;
-  score += flight.weatherSeen.size * SCORE.weatherBonus;
-  return Math.max(0, Math.round(score));
+  const lines = [{ label: 'Base delivery', amount: SCORE.baseDelivery }];
+  let total = SCORE.baseDelivery;
+  if (contract) {
+    const amount = Math.round(contract.cargoKg * SCORE.perKg);
+    total += amount;
+    lines.push({ label: `Cargo, ${contract.cargoKg} kg`, amount });
+  }
+  if (landedClean) {
+    total += SCORE.cleanLandingBonus;
+    lines.push({ label: 'Clean landing', amount: SCORE.cleanLandingBonus });
+  }
+  if (contract && contract.fragile) {
+    const amount = cargoBroken ? SCORE.fragileBroken : SCORE.fragileIntact;
+    total += amount;
+    lines.push({ label: cargoBroken ? 'Cargo damaged in transit' : 'Fragile cargo, intact', amount });
+  }
+  if (fuelFraction(flight.aircraft) > 0.5) {
+    total += SCORE.lowFuelBonus;
+    lines.push({ label: 'Fuel to spare', amount: SCORE.lowFuelBonus });
+  }
+  if (flight.weatherSeen.size > 0) {
+    const amount = flight.weatherSeen.size * SCORE.weatherBonus;
+    total += amount;
+    lines.push({ label: `Weather survived, x${flight.weatherSeen.size}`, amount });
+  }
+  return { total: Math.max(0, Math.round(total)), lines };
 }
 
 /**

@@ -1,7 +1,7 @@
 // The hangar: every upgrade the Halcyon can take, what it costs and the stat it actually
-// changes on the aircraft (applyUpgrades, below, is the only place that math happens). Ten
-// upgrades across five systems; the campaign decides which are owned, this file only describes
-// them.
+// changes on the aircraft (applyUpgrades, below, is the only place that math happens). Twelve
+// upgrades across six systems; the campaign decides which are owned, this file only describes
+// them. Eleven change a number; Sunset Livery changes nothing but how the Halcyon looks.
 
 export const UPGRADES = [
   {
@@ -85,6 +85,22 @@ export const UPGRADES = [
     detail: 'Cuts through fog: the dock and the gauges read clearly much further out.',
     effect: { visibilityBase: 1.55 },
   },
+  {
+    id: 'floats-shock',
+    system: 'Floats',
+    name: 'Shock-Damped Gear',
+    cost: 200,
+    detail: 'Softer oleo struts: a hard landing still costs hull, but a quarter less of it.',
+    effect: { damagePerMs: 0.75 },
+  },
+  {
+    id: 'hull-livery',
+    system: 'Hull',
+    name: 'Sunset Livery',
+    cost: 120,
+    detail: "A hand-painted sunset-gold stripe in place of the standard rust-red. Flies exactly the same; looks like it means business.",
+    effect: { liveryVariant: 'sunset' },
+  },
 ];
 
 export function findUpgrade(id) {
@@ -104,7 +120,7 @@ export function applyUpgrades(base, ownedIds) {
     const upgrade = findUpgrade(id);
     if (!upgrade) continue;
     for (const [key, factor] of Object.entries(upgrade.effect)) {
-      stats[key] = (stats[key] ?? 1) * factor;
+      stats[key] = typeof factor === 'number' ? (stats[key] ?? 1) * factor : factor;
     }
   }
   return stats;

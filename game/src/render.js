@@ -2,9 +2,9 @@
 // a frame out; nothing here changes either. The flight scene uses a fixed camera: the Halcyon
 // sits still on screen and the sea, sky and islands move past it, so altitude and speed read as
 // how far the horizon and the water are, not as the plane sliding around the canvas.
-import { FIELD, PALETTE, FONT, TITLE, SUBTITLE, AIRCRAFT_BASE } from './config.js';
-import { ROUTES, ISLANDS, HOME, findIsland } from './geo.js';
-import { NPCS } from './npcs.js';
+import { FIELD, PALETTE, FONT, TITLE, SUBTITLE, AIRCRAFT_BASE, FINALE } from './config.js';
+import { ROUTES, ISLANDS, HOME, findIsland, suggestedRoute } from './geo.js';
+import { NPCS, clientReaction } from './npcs.js';
 import { contractsForRoute } from './contracts.js';
 import { UPGRADES } from './upgrades.js';
 import { ACHIEVEMENTS } from './achievements.js';
@@ -17,10 +17,11 @@ import {
   drawCargoReadout,
   drawWarningBanner,
   drawDestinationBanner,
-  drawScorePopup,
   drawAchievementToast,
   drawComboBadge,
   drawMuteIndicator,
+  GRADE_LABEL,
+  GRADE_COLOR,
 } from './hud.js';
 
 export const SCREEN_TITLE = 'title';
@@ -36,8 +37,8 @@ const SEA_SCREEN_Y = 534;
 export const HARBOR_LAYOUT = {
   routes: { x: 56, yStart: 128, rowH: 36, width: 420 },
   contracts: { x: 484, yStart: 126, rowH: 92, width: 420 },
-  shop: { x: 930, yStart: 112, rowH: 34, width: 280 },
-  map: { x: 56, y: 468, width: 1154, height: 148 },
+  shop: { x: 930, yStart: 108, rowH: 28, width: 280 },
+  map: { x: 56, y: 460, width: 1154, height: 178 },
   flyButton: { x: 940, y: FIELD.height - 70, width: 180, height: 40 },
 };
 
@@ -348,7 +349,9 @@ export function createRenderer(canvas) {
 
   // ---- the aircraft itself ----------------------------------------------------------------------
 
-  function drawAircraftSprite(screenY, pitchDeg, throttle, splash) {
+  function drawAircraftSprite(screenY, pitchDeg, throttle, splash, liveryVariant, smokeIntensity) {
+    const liveryColor = liveryVariant === 'sunset' ? '#e8a23d' : PALETTE.livery;
+    const liveryDarkColor = liveryVariant === 'sunset' ? '#b5752a' : PALETTE.liveryDark;
     ctx.save();
     ctx.translate(PLANE_SCREEN_X, screenY);
     ctx.rotate((-pitchDeg * Math.PI) / 180);
@@ -367,7 +370,7 @@ export function createRenderer(canvas) {
     ctx.lineTo(-30, 8);
     ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = PALETTE.livery;
+    ctx.fillStyle = liveryColor;
     ctx.fillRect(-58, -26, 8, 24);
     ctx.fillStyle = PALETTE.cabinGlow;
     ctx.beginPath();
@@ -382,7 +385,7 @@ export function createRenderer(canvas) {
     ctx.closePath();
     ctx.fill();
     // The livery stripe runs the hull's length, Tidewing Post's rust-red on cream.
-    ctx.fillStyle = PALETTE.livery;
+    ctx.fillStyle = liveryColor;
     ctx.beginPath();
     ctx.moveTo(-32, 5);
     ctx.quadraticCurveTo(10, -10, 52, 0);
@@ -406,7 +409,7 @@ export function createRenderer(canvas) {
     // Wing, high enough to read as a parasol wing above the hull, with a dark anti-glare stripe.
     ctx.fillStyle = PALETTE.hullShade;
     ctx.fillRect(-46, -30, 96, 8);
-    ctx.fillStyle = PALETTE.liveryDark;
+    ctx.fillStyle = liveryDarkColor;
     ctx.fillRect(-46, -30, 96, 3);
     ctx.fillStyle = PALETTE.hullShade;
     ctx.fillRect(-4, -24, 6, 10);
@@ -432,6 +435,21 @@ export function createRenderer(canvas) {
         ctx.lineTo(70 + Math.cos(a) * 16, -2 + Math.sin(a) * 16);
         ctx.stroke();
       }
+    }
+    if (smokeIntensity > 0) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(0.75, smokeIntensity);
+      ctx.fillStyle = '#3a3630';
+      for (let i = 0; i < 5; i += 1) {
+        const t = (performance.now() / 500 + i * 0.4) % 2.5;
+        const puffX = 56 + t * 26;
+        const puffY = -14 - t * 22 + Math.sin(i * 2.1) * 6;
+        const r = 4 + t * 7 * smokeIntensity;
+        ctx.beginPath();
+        ctx.arc(puffX, puffY, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
     }
     ctx.restore();
 
@@ -497,16 +515,82 @@ export function createRenderer(canvas) {
     ctx.fillRect(0, 0, FIELD.width, FIELD.height);
   }
 
+  // ---- the result screen (shown over the flight scene once it has ended) --------------------
+
+  function drawResultPanel(flight, campaign, popupAge) {
+    const result = flight.result;
+    const contract = flight.contract;
+    const riseIn = Math.min(1, popupAge / 0.45);
+    const lineCount = result.delivered ? result.scoreLines.length : 0;
+    const extra = result.delivered && result.multiplier > 1 ? 1 : 0;
+    const panelW = 640;
+    const panelH = result.delivered ? 300 + (lineCount + extra) * 24 : 230;
+    const px = FIELD.width / 2 - panelW / 2;
+    const py = FIELD.height / 2 - panelH / 2 + (1 - riseIn) * 26;
+
+    ctx.save();
+    ctx.globalAlpha = riseIn;
+    ctx.fillStyle = 'rgba(6, 8, 14, 0.55)';
+    ctx.fillRect(0, 0, FIELD.width, FIELD.height);
+    panel(px, py, panelW, panelH);
+
+    const title = result.delivered ? GRADE_LABEL[result.grade] : 'FLIGHT LOST';
+    const color = result.delivered ? GRADE_COLOR[result.grade] : PALETTE.warn;
+    text(title, FIELD.width / 2, py + 54, 38, color, 'center', 'bold');
+
+    if (result.delivered) {
+      text(`Rank ${result.rank} - ${flight.route.name}`, FIELD.width / 2, py + 82, 18, PALETTE.ring, 'center');
+      let y = py + 116;
+      text('EARNINGS', px + 40, y, 12, PALETTE.muted, 'left');
+      for (const line of result.scoreLines) {
+        y += 24;
+        text(line.label, px + 40, y, 14, PALETTE.text, 'left');
+        text(`${line.amount >= 0 ? '+' : ''}${line.amount}`, px + panelW - 40, y, 14, line.amount < 0 ? PALETTE.warn : PALETTE.good, 'right');
+      }
+      if (result.multiplier > 1) {
+        y += 24;
+        text(`Combo x${result.multiplier.toFixed(2)}, streak ${result.combo}`, px + 40, y, 14, PALETTE.ring, 'left');
+      }
+      y += 20;
+      ctx.strokeStyle = PALETTE.panelEdge;
+      ctx.beginPath();
+      ctx.moveTo(px + 40, y);
+      ctx.lineTo(px + panelW - 40, y);
+      ctx.stroke();
+      y += 32;
+      text(`TOTAL  +${result.awardedScore ?? result.score} credits`, FIELD.width / 2, y, 22, PALETTE.good, 'center', 'bold');
+      y += 36;
+      if (contract) text(clientReaction(NPCS[contract.client], result), FIELD.width / 2, y, 14, PALETTE.muted, 'center');
+      y += 26;
+      const next = suggestedRoute(campaign.clearedRoutes);
+      text(next ? `Next: ${next.name} is open.` : 'Every route in the Amberreach Isles is open.', FIELD.width / 2, y, 14, PALETTE.ring, 'center');
+    } else {
+      text(flight.route.name, FIELD.width / 2, py + 82, 16, PALETTE.muted, 'center');
+      text(result.reason, FIELD.width / 2, py + 120, 17, PALETTE.text, 'center');
+      text('Combo streak lost.', FIELD.width / 2, py + 148, 14, PALETTE.muted, 'center');
+    }
+    text('Press Space or click to continue', FIELD.width / 2, py + panelH - 22, 15, PALETTE.ring, 'center');
+    ctx.restore();
+  }
+
   // ---- the flight screen ---------------------------------------------------------------------
 
   function drawFlightScene(scene) {
-    const { flight, blink, splash, popupAge, toast, lightning } = scene;
+    const { flight, blink, splash, popupAge, toast, lightning, campaign } = scene;
     const aircraft = flight.aircraft;
     const stats = aircraft.stats;
     const route = flight.route;
     const island = findIsland(route.island);
     const night = Boolean(route.isFinale);
     const visibleRange = (stats.visibilityBase ?? AIRCRAFT_BASE.visibilityBase) * (flight.weather.kind === 'fog' ? 0.42 : 1);
+    const ended = flight.phase === 'landed' || flight.phase === 'crashed';
+
+    const shake = scene.shake ?? 0;
+    ctx.save();
+    if (shake > 0) {
+      const tick = Math.floor(performance.now() / 16);
+      ctx.translate((hashTile(tick) - 0.5) * 20 * shake, (hashTile(tick + 500) - 0.5) * 20 * shake);
+    }
 
     drawSky(night);
     if (!night) drawClouds(aircraft.x);
@@ -523,7 +607,8 @@ export function createRenderer(canvas) {
     ctx.restore();
 
     const screenY = SEA_SCREEN_Y - horizonShift - displayAlt;
-    drawAircraftSprite(screenY, aircraft.pitchDeg, aircraft.throttle, splash);
+    const smokeIntensity = aircraft.integrity < 100 ? Math.min(1, (100 - aircraft.integrity) / 60) : 0;
+    drawAircraftSprite(screenY, aircraft.pitchDeg, aircraft.throttle, splash, stats.liveryVariant, smokeIntensity);
     drawWeatherOverlay(flight.weather.kind, scene.weatherStrength, flight.windSign);
     drawLightning(lightning);
 
@@ -536,19 +621,113 @@ export function createRenderer(canvas) {
     drawMuteIndicator(ctx, Boolean(scene.muted));
     if (island) drawDestinationBanner(ctx, island.name, Math.max(0, distanceLeft));
 
+    const fuelFrac = aircraft.fuel / stats.fuelCapacity;
+    const criticalFuel = fuelFrac < 0.08;
     if (aircraft.stalled && blink) drawWarningBanner(ctx, 'STALL - NOSE DOWN', true);
-    else if (aircraft.fuel / stats.fuelCapacity < 0.08 && blink) drawWarningBanner(ctx, 'FUEL CRITICAL', true);
-    else if (aircraft.fuel / stats.fuelCapacity < 0.22 && blink) drawWarningBanner(ctx, 'LOW FUEL', true);
-
-    if (flight.phase === 'landed' || flight.phase === 'crashed') drawScorePopup(ctx, flight.result, popupAge);
-    if (toast) drawAchievementToast(ctx, toast.achievement, toast.age);
+    else if (criticalFuel && blink) drawWarningBanner(ctx, 'FUEL CRITICAL', true);
+    else if (fuelFrac < 0.22 && blink) drawWarningBanner(ctx, 'LOW FUEL', true);
+    if ((criticalFuel || aircraft.stalled) && !ended) {
+      ctx.save();
+      ctx.globalAlpha = 0.16 + 0.12 * Math.sin(performance.now() / 150);
+      const grad = ctx.createRadialGradient(FIELD.width / 2, FIELD.height / 2, 220, FIELD.width / 2, FIELD.height / 2, 700);
+      grad.addColorStop(0, 'rgba(255, 60, 40, 0)');
+      grad.addColorStop(1, 'rgba(255, 60, 40, 0.9)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, FIELD.width, FIELD.height);
+      ctx.restore();
+    }
 
     if (night) {
       text('THE LONG NIGHT RUN', FIELD.width / 2, 170, 20, PALETTE.ring, 'center', 'bold');
+      if (!ended) {
+        const remaining = Math.max(0, FINALE.timeBudget - flight.elapsed);
+        const urgent = remaining < FINALE.lowTimeThreshold;
+        ctx.save();
+        if (urgent) ctx.globalAlpha = 0.7 + 0.3 * Math.sin(performance.now() / 150);
+        const mm = Math.floor(remaining / 60);
+        const ss = Math.floor(remaining % 60);
+        text(`STORM CLOSING - ${mm}:${String(ss).padStart(2, '0')}`, FIELD.width / 2, 196, 16, urgent ? PALETTE.warn : PALETTE.ring, 'center', 'bold');
+        ctx.restore();
+      } else if (flight.phase === 'landed') {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, 0.45 - popupAge * 0.5);
+        ctx.fillStyle = 'rgba(255, 210, 120, 0.5)';
+        ctx.fillRect(0, 0, FIELD.width, FIELD.height);
+        ctx.restore();
+      }
+    }
+    ctx.restore();
+
+    if (ended) drawResultPanel(flight, campaign, popupAge);
+    if (toast) drawAchievementToast(ctx, toast.achievement, toast.age);
+
+    const flash = scene.flash ?? 0;
+    if (flash > 0) {
+      ctx.save();
+      ctx.fillStyle = `rgba(255, 50, 40, ${Math.min(0.6, flash)})`;
+      ctx.fillRect(0, 0, FIELD.width, FIELD.height);
+      ctx.restore();
     }
   }
 
   // ---- title, harbor and briefing screens ----------------------------------------------------
+
+  function drawKeycap(x, y, size, label, glyph) {
+    ctx.fillStyle = PALETTE.panel;
+    ctx.strokeStyle = PALETTE.panelEdge;
+    ctx.lineWidth = 2;
+    ctx.fillRect(x, y, size, size);
+    ctx.strokeRect(x + 1, y + 1, size - 2, size - 2);
+    text(label, x + size / 2, y + size - 8, size * 0.42, PALETTE.text, 'center', 'bold');
+    ctx.save();
+    ctx.strokeStyle = PALETTE.ring;
+    ctx.fillStyle = PALETTE.ring;
+    ctx.lineWidth = 2;
+    const cx = x + size / 2;
+    const cy = y - 10;
+    if (glyph === 'up' || glyph === 'down') {
+      const dir = glyph === 'up' ? -1 : 1;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - 6 * dir);
+      ctx.lineTo(cx - 6, cy + 6 * dir);
+      ctx.lineTo(cx + 6, cy + 6 * dir);
+      ctx.closePath();
+      ctx.fill();
+    } else if (glyph === 'left' || glyph === 'right') {
+      const dir = glyph === 'left' ? -1 : 1;
+      ctx.beginPath();
+      ctx.moveTo(cx + 6 * dir, cy - 6);
+      ctx.lineTo(cx - 6 * dir, cy);
+      ctx.lineTo(cx + 6 * dir, cy + 6);
+      ctx.closePath();
+      ctx.fill();
+    } else if (glyph === 'plus' || glyph === 'minus') {
+      ctx.beginPath();
+      ctx.moveTo(cx - 7, cy);
+      ctx.lineTo(cx + 7, cy);
+      if (glyph === 'plus') {
+        ctx.moveTo(cx, cy - 7);
+        ctx.lineTo(cx, cy + 7);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawControlDiagram(cx, y) {
+    const key = 44;
+    const gap = 8;
+    drawKeycap(cx - key / 2, y, key, 'W', 'up');
+    drawKeycap(cx - key - gap - key / 2, y + key + gap, key, 'A', 'left');
+    drawKeycap(cx - key / 2, y + key + gap, key, 'S', 'down');
+    drawKeycap(cx + gap + key / 2, y + key + gap, key, 'D', 'right');
+    text('Climb, dive, steer', cx, y + (key + gap) * 2 + 18, 14, PALETTE.muted, 'center');
+
+    const tx = cx + 230;
+    drawKeycap(tx - key - gap / 2, y + key / 2, key, 'Q', 'minus');
+    drawKeycap(tx + gap / 2, y + key / 2, key, 'E', 'plus');
+    text('Throttle', tx, y + key + key / 2 + 24, 14, PALETTE.muted, 'center');
+  }
 
   function drawTitleScreen(campaign) {
     drawSky(false);
@@ -556,16 +735,13 @@ export function createRenderer(canvas) {
     drawBirds(performance.now() / 40);
     drawFarIslands(performance.now() / 40);
     drawSea(performance.now() / 40);
-    text(TITLE, FIELD.width / 2, 300, 64, PALETTE.text, 'center', 'bold');
-    text(SUBTITLE, FIELD.width / 2, 340, 22, PALETTE.ring, 'center');
-    const lines = [
-      'Climb with W/Up, dive with S/Down.',
-      'Steer with A/D or Left/Right against the wind.',
-      'Throttle up with E, back with Q. Mute the engine and the rest with M.',
-      '',
-      `${campaign.totals.deliveries} deliveries flown - ${campaign.unlockedAchievements.size}/${ACHIEVEMENTS.length} feats earned`,
-    ];
-    lines.forEach((line, i) => text(line, FIELD.width / 2, 420 + i * 30, 18, PALETTE.muted, 'center'));
+    text(TITLE, FIELD.width / 2, 170, 56, PALETTE.text, 'center', 'bold');
+    text(SUBTITLE, FIELD.width / 2, 206, 20, PALETTE.ring, 'center');
+
+    drawControlDiagram(FIELD.width / 2 - 90, 290);
+    text('Mute the engine and the rest with M.', FIELD.width / 2, 450, 15, PALETTE.muted, 'center');
+    text(`${campaign.totals.deliveries} deliveries flown - ${campaign.unlockedAchievements.size}/${ACHIEVEMENTS.length} feats earned`, FIELD.width / 2, 480, 16, PALETTE.muted, 'center');
+    text('The first run out to Driftwood Cay is calm water, to get your bearings.', FIELD.width / 2, 540, 16, PALETTE.muted, 'center');
     text('Click or press Space to open the harbour board', FIELD.width / 2, 620, 22, PALETTE.ring, 'center');
   }
 
@@ -638,6 +814,7 @@ export function createRenderer(canvas) {
       }
       const labelColor = status === 'LOCKED' ? PALETTE.muted : PALETTE.text;
       text(status === 'LOCKED' ? `[locked] ${island.name}` : island.name, point.x, point.y + 24, 12, labelColor, 'center');
+      if (route.gimmick && status !== 'LOCKED') text(route.gimmick.name, point.x, point.y + 38, 11, PALETTE.ring, 'center');
     }
 
     ctx.fillStyle = PALETTE.ring;
@@ -739,6 +916,7 @@ export function createRenderer(canvas) {
     } else if (route.isFinale) {
       text('A storm over open water, and no daylight left to wait it out.', FIELD.width / 2, 300, 16, PALETTE.muted, 'center');
     }
+    if (route.gimmick) text(`${route.gimmick.name}: ${route.gimmick.hint}`, FIELD.width / 2, 420, 14, PALETTE.ring, 'center');
     text('Press Space or click to take off', FIELD.width / 2, 520, 20, PALETTE.ring, 'center');
   }
 

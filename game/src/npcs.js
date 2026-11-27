@@ -53,3 +53,12 @@ export const NPCS = {
     returnLine: "Every run you make out here is one less thing I have to worry about.",
   },
 };
+
+/** The result screen's one line from whoever sent for this delivery, reading the grade, not a script. */
+export function clientReaction(npc, result) {
+  if (!result.delivered) return `${npc.name} is still waiting on this one.`;
+  if (result.cargoBroken) return `${npc.name}: "Well... most of it made it."`;
+  if (result.grade === 'perfect') return `${npc.name}: "Didn't even feel you land. Beautiful flying."`;
+  if (result.grade === 'smooth') return `${npc.name}: "Right on time, Captain. Thank you."`;
+  return `${npc.name}: "A rough one, but it's here. That's what matters."`;
+}

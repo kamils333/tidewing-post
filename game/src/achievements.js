@@ -1,4 +1,4 @@
-// Sixteen feats. Each one's `check(campaign, debrief)` reads the campaign's running totals and
+// Eighteen feats. Each one's `check(campaign, debrief)` reads the campaign's running totals and
 // the debrief of the flight that just ended (null between flights) and returns true once it is
 // earned; evaluateAchievements (campaign.js calls it after every landing) is the only place these
 // run. "Ace of the Amberreach" deliberately depends on the others, so it always unlocks last.
@@ -94,6 +94,18 @@ export const ACHIEVEMENTS = [
     name: 'Every Manifest',
     detail: "Fly every contract on Tidewing Post's books.",
     check: (campaign) => campaign.completedContracts.size >= CONTRACT_COUNT,
+  },
+  {
+    id: 'isles-specialist',
+    name: 'Isles Specialist',
+    detail: 'Clear the Reef Gauntlet, the Crosswind Valley and the Ash Whiteout at least once each.',
+    check: (campaign) => ['thornback', 'windlass', 'ashfall'].every((id) => campaign.clearedRoutes.has(id)),
+  },
+  {
+    id: 'flawless',
+    name: 'Flawless',
+    detail: 'Earn an S-ranked delivery.',
+    check: (campaign, debrief) => Boolean(debrief && debrief.rank === 'S'),
   },
   {
     id: 'ace-amberreach',

@@ -8,8 +8,8 @@ export const HOME = { id: 'saltmere', name: 'Saltmere Harbor', map: { x: 0.5, y:
 // is the only reader); placed to spread the isles out, not to be a precise compass.
 export const ISLANDS = [
   { id: 'driftwood', name: 'Driftwood Cay', profile: 'low', keeper: 'mirei', map: { x: 0.8, y: 0.36 } },
-  { id: 'kelp', name: 'Kelp Hollow', profile: 'lagoon', keeper: 'benno', map: { x: 0.74, y: 0.7 } },
-  { id: 'thornback', name: 'Thornback Shoal', profile: 'reef', keeper: 'sera', map: { x: 0.44, y: 0.78 } },
+  { id: 'kelp', name: 'Kelp Hollow', profile: 'lagoon', keeper: 'benno', map: { x: 0.74, y: 0.62 } },
+  { id: 'thornback', name: 'Thornback Shoal', profile: 'reef', keeper: 'sera', map: { x: 0.44, y: 0.68 } },
   { id: 'windlass', name: 'Windlass Point', profile: 'ridge', keeper: 'dez', map: { x: 0.15, y: 0.6 } },
   { id: 'ashfall', name: 'Ashfall Rock', profile: 'volcanic', keeper: 'nat', map: { x: 0.18, y: 0.3 } },
   { id: 'lastlight', name: 'Last Light Atoll', profile: 'atoll', keeper: 'priya', map: { x: 0.56, y: 0.2 } },
@@ -27,7 +27,7 @@ export const ROUTES = [
     name: 'Saltmere -> Driftwood Cay',
     heading: 84,
     distance: 950,
-    weatherTable: ['clear', 'clear', 'crosswind'],
+    weatherTable: ['clear'],
     hazards: [],
     unlockRequires: null,
   },
@@ -50,6 +50,7 @@ export const ROUTES = [
     weatherTable: ['crosswind', 'storm'],
     hazards: [{ start: 1080, end: 1200, minAltitude: 48, label: 'the Thornback reef' }],
     unlockRequires: 'kelp',
+    gimmick: { name: 'Reef Gauntlet', hint: 'Hold height over the shoal, then dive hard for the dock.' },
   },
   {
     id: 'windlass',
@@ -58,8 +59,10 @@ export const ROUTES = [
     heading: 297,
     distance: 1520,
     weatherTable: ['crosswind', 'crosswind', 'storm'],
+    forcedWeather: 'crosswind',
     hazards: [],
     unlockRequires: 'thornback',
+    gimmick: { name: 'Crosswind Valley', hint: 'The wind never lets up here. Correct early, correct often.' },
   },
   {
     id: 'ashfall',
@@ -68,8 +71,10 @@ export const ROUTES = [
     heading: 18,
     distance: 1720,
     weatherTable: ['fog', 'fog', 'storm'],
+    forcedWeather: 'fog',
     hazards: [{ start: 1420, end: 1540, minAltitude: 40, label: 'the Ashfall shelf' }],
     unlockRequires: 'windlass',
+    gimmick: { name: 'Ash Whiteout', hint: 'The haze hides the dock until you are nearly on it. Trust the gauges.' },
   },
   {
     id: 'lastlight',

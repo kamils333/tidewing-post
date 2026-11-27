@@ -133,37 +133,8 @@ export function drawDestinationBanner(ctx, islandName, distanceLeft) {
   label(ctx, text, FIELD.width / 2, 98, 14, PALETTE.ring, 'center');
 }
 
-const GRADE_LABEL = { perfect: 'PERFECT!', smooth: 'SMOOTH', rough: 'ROUGH' };
-const GRADE_COLOR = { perfect: '#ffd27a', smooth: '#8fe3a0', rough: '#e3b655' };
-
-export function drawScorePopup(ctx, debrief, age) {
-  const alpha = Math.max(0, 1 - age / 2.6);
-  if (alpha <= 0) return;
-  const rise = Math.min(40, age * 30);
-  ctx.save();
-  ctx.globalAlpha = alpha;
-  const title = debrief.delivered ? GRADE_LABEL[debrief.grade] : 'FLIGHT LOST';
-  const color = debrief.delivered ? GRADE_COLOR[debrief.grade] : PALETTE.warn;
-  const scalePop = debrief.grade === 'perfect' ? 1 + Math.max(0, 0.25 - age) : 1;
-  ctx.save();
-  ctx.translate(FIELD.width / 2, 250 - rise);
-  ctx.scale(scalePop, scalePop);
-  label(ctx, title, 0, 0, 44, color, 'center');
-  ctx.restore();
-  if (debrief.delivered) {
-    label(ctx, `+${debrief.awardedScore ?? debrief.score} credits`, FIELD.width / 2, 300 - rise, 26, PALETTE.text, 'center');
-    let nextY = 332 - rise;
-    if (debrief.multiplier > 1) {
-      label(ctx, `x${debrief.multiplier.toFixed(2)} combo - streak ${debrief.combo}`, FIELD.width / 2, nextY, 18, PALETTE.ring, 'center');
-      nextY += 24;
-    }
-    if (debrief.fragile && debrief.cargoBroken) label(ctx, 'Cargo rattled apart', FIELD.width / 2, nextY, 18, PALETTE.warn, 'center');
-  } else {
-    label(ctx, debrief.reason, FIELD.width / 2, 300 - rise, 20, PALETTE.muted, 'center');
-    label(ctx, 'Combo streak lost', FIELD.width / 2, 328 - rise, 16, PALETTE.muted, 'center');
-  }
-  ctx.restore();
-}
+export const GRADE_LABEL = { perfect: 'PERFECT!', smooth: 'SMOOTH', rough: 'ROUGH' };
+export const GRADE_COLOR = { perfect: '#ffd27a', smooth: '#8fe3a0', rough: '#e3b655' };
 
 export function drawMuteIndicator(ctx, muted) {
   if (!muted) return;

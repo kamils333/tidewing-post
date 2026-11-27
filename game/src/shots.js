@@ -11,7 +11,7 @@ import { applyUpgrades } from './upgrades.js';
 import { contractsForRoute } from './contracts.js';
 import { createCampaign } from './campaign.js';
 import { findAchievement } from './achievements.js';
-import { SCREEN_FLIGHT, SCREEN_HARBOR } from './render.js';
+import { SCREEN_FLIGHT, SCREEN_HARBOR, SCREEN_TITLE } from './render.js';
 import { STEP } from './config.js';
 
 const MAX_SECONDS = 90;
@@ -126,6 +126,39 @@ function stageSplash(random) {
     weatherStrength: 0,
     combo: 0,
     comboMultiplier: 1,
+    campaign: createCampaign(),
+    shake: 0,
+    flash: 0,
+  };
+}
+
+function stageTitle() {
+  const campaign = createCampaign();
+  campaign.totals.deliveries = 7;
+  campaign.unlockedAchievements.add('first-wings');
+  campaign.unlockedAchievements.add('feather-touch');
+  campaign.unlockedAchievements.add('storm-rider');
+  return { screen: SCREEN_TITLE, campaign };
+}
+
+function stageResult(random) {
+  const flight = flyLanding('kelp', 0, random) ?? flyLanding('driftwood', 0, random);
+  const campaign = createCampaign();
+  campaign.clearedRoutes.add('driftwood');
+  campaign.clearedRoutes.add('kelp');
+  return {
+    flight,
+    blink: true,
+    splash: 0,
+    popupAge: 1.2,
+    toast: null,
+    lightning: false,
+    weatherStrength: 0,
+    combo: 0,
+    comboMultiplier: 1,
+    campaign,
+    shake: 0,
+    flash: 0,
   };
 }
 
@@ -153,6 +186,8 @@ export function stageShot(name, random) {
   if (name === 'storm') return { screen: SCREEN_FLIGHT, scene: stageStorm(random) };
   if (name === 'finale') return { screen: SCREEN_FLIGHT, scene: stageFinale(random) };
   if (name === 'splash') return { screen: SCREEN_FLIGHT, scene: stageSplash(random) };
+  if (name === 'result') return { screen: SCREEN_FLIGHT, scene: stageResult(random) };
+  if (name === 'title') return stageTitle();
   if (name === 'harbor') return stageHarbor();
   return { screen: SCREEN_FLIGHT, scene: stageCover(random) };
 }

@@ -57,6 +57,8 @@ function runGame() {
   const toastQueue = [];
   let currentToast = null;
   let blinkClock = 0;
+  let shake = 0;
+  let flash = 0;
 
   function announceScreen(name) {
     if (name === SCREEN_TITLE) announce('Tidewing Post. Press Space or click to open the dispatch board.');
@@ -160,12 +162,23 @@ function runGame() {
     }
   }
 
+  /** A hard touchdown or a terrain strike jolts the camera and tints the screen, briefly. */
+  function triggerImpactFeedback(result) {
+    const severity = Math.min(1, Math.max(0, (result.verticalSpeed - FLIGHT.safeTouchdownSpeed) / 12));
+    const hazardOrHull = !result.delivered && (result.reason.startsWith('struck') || result.reason.includes('hull gave out'));
+    if (result.grade === 'rough' || hazardOrHull) {
+      shake = Math.max(shake, 0.45 + severity * 0.55);
+      flash = Math.max(flash, 0.3 + severity * 0.4);
+    }
+  }
+
   function finishFlightIfNeeded() {
     if (!flight || flightRecorded) return;
     if (flight.phase !== PHASE_LANDED && flight.phase !== PHASE_CRASHED) return;
     flightRecorded = true;
     audio.stopEngine();
     playLandingSound(flight.result);
+    triggerImpactFeedback(flight.result);
     const routeForRecord = flight.route;
     const { unlocked, award } = recordFlightResult(ui.campaign, routeForRecord, flight.result);
     if (award) Object.assign(flight.result, award);
@@ -201,6 +214,8 @@ function runGame() {
 
   function stepFrame(dt) {
     blinkClock += dt;
+    shake = Math.max(0, shake - dt * 2.2);
+    flash = Math.max(0, flash - dt * 2.5);
     if (currentToast) {
       currentToast.age += dt;
       if (currentToast.age > 3.8) currentToast = toastQueue.length > 0 ? { achievement: toastQueue.shift(), age: 0 } : null;
@@ -222,7 +237,7 @@ function runGame() {
     warningBeepTimer -= dt;
     if (warning && warningBeepTimer <= 0) {
       audio.playWarningBeep();
-      warningBeepTimer = 1.6;
+      warningBeepTimer = fuelFrac < FLIGHT.criticalFuelFraction || aircraft.stalled ? 0.8 : 1.6;
     } else if (!warning) {
       warningBeepTimer = 0;
     }
@@ -255,6 +270,9 @@ function runGame() {
           combo: ui.campaign.combo,
           comboMultiplier: comboMultiplier(ui.campaign.combo),
           muted: audio.isMuted(),
+          campaign: ui.campaign,
+          shake,
+          flash,
         },
       };
     }

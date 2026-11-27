@@ -48,6 +48,12 @@ export const FLIGHT = {
   criticalFuelFraction: 0.08,
 };
 
+/** The Long Night Run's countdown is presentation only: it never ends the flight by itself. */
+export const FINALE = {
+  timeBudget: 75, // seconds before "the storm closes in" reads as urgent
+  lowTimeThreshold: 15,
+};
+
 /** Consecutive Perfect/Smooth landings build a score multiplier; one Rough landing resets it. */
 export const COMBO = {
   stepPerLanding: 0.12,
